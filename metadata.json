@@ -1,0 +1,6 @@
+{
+  "name": "Redeus Dictionary",
+  "description": "An interactive English dictionary and learning companion powered by Gemini AI under the Redeus Dictionary brand, featuring precise definitions, American pronunciation, synonyms, bookmarking, review quizzes, and real-time AI-generated word visualizations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

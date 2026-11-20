@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+
+    <!-- Variation 2: Geometric / Angular Neo-Brutalist Redeus Icon -->
+    <!-- Hard Offset Drop Shadow (Solid Black, No Blur) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M38,20 L94,20 C106,20 116,30 116,42 L116,98 C116,110 106,120 94,120 L38,120 C26,120 16,110 16,98 L16,42 C16,30 26,20 38,20 Z" />
+
+    <!-- Rounded Square Container Background (#F5B301 Vivid Amber/Gold) -->
+    <path
+        android:fillColor="#F5B301"
+        android:pathData="M30,12 L86,12 C98,12 108,22 108,34 L108,90 C108,102 98,112 86,112 L30,112 C18,112 8,102 8,90 L8,34 C8,22 18,12 30,12 Z" />
+
+    <!-- Thick Black Outline (6px) -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="6"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M30,12 L86,12 C98,12 108,22 108,34 L108,90 C108,102 98,112 86,112 L30,112 C18,112 8,102 8,90 L8,34 C8,22 18,12 30,12 Z" />
+
+    <!-- Angular Center Spine -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M55.5,29 L61.5,29 L61.5,87 L55.5,87 Z" />
+
+    <!-- Angular Left Page (Solid Black Geometric Polygon) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M55.5,38 L43,32 L31,37 L31,75 L43,70 L55.5,75 Z" />
+
+    <!-- Angular Right Page (Bold Black Faceted Outline, 6px) -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="6"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter"
+        android:fillColor="#00000000"
+        android:pathData="M61.5,38 L74,32 L86,37 L86,75 L74,70 L61.5,75" />
+
+    <!-- Sharp Geometric 4-Pointed AI Sparkle (Rhombus Star) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M87,21 L89.5,27.5 L96,30 L89.5,32.5 L87,39 L84.5,32.5 L78,30 L84.5,27.5 Z" />
+
+</vector>

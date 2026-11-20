@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Redeus Dictionary - Variation 2 Foreground Layer (Geometric / Angular) -->
+    <!-- Angular Center Spine -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M51.5,27 L56.5,27 L56.5,79 L51.5,79 Z" />
+
+    <!-- Angular Left Page (Solid Black Silhouette) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M51.5,35 L40,29.5 L30,34 L30,70 L40,65.5 L51.5,70.5 Z" />
+
+    <!-- Angular Right Page (Bold Black Faceted Outline) -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="square"
+        android:strokeLineJoin="miter"
+        android:fillColor="#00000000"
+        android:pathData="M56.5,35 L68,29.5 L78,34 L78,70 L68,65.5 L56.5,70.5" />
+
+    <!-- Sharp Geometric 4-Pointed AI Sparkle -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M79,19 L81.2,24.8 L87,27 L81.2,29.2 L79,35 L76.8,29.2 L71,27 L76.8,24.8 Z" />
+
+</vector>

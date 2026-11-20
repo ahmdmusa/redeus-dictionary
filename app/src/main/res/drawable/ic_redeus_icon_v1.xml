@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="128dp"
+    android:height="128dp"
+    android:viewportWidth="128"
+    android:viewportHeight="128">
+
+    <!-- Variation 1: Canonical Neo-Brutalist Redeus Icon -->
+    <!-- Hard Offset Drop Shadow (Solid Black, No Blur) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M38,20 L94,20 C106,20 116,30 116,42 L116,98 C116,110 106,120 94,120 L38,120 C26,120 16,110 16,98 L16,42 C16,30 26,20 38,20 Z" />
+
+    <!-- Rounded Square Container Background (#F5B301 Vivid Amber/Gold) -->
+    <path
+        android:fillColor="#F5B301"
+        android:pathData="M30,12 L86,12 C98,12 108,22 108,34 L108,90 C108,102 98,112 86,112 L30,112 C18,112 8,102 8,90 L8,34 C8,22 18,12 30,12 Z" />
+
+    <!-- Thick Black Outline (6px) -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="6"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M30,12 L86,12 C98,12 108,22 108,34 L108,90 C108,102 98,112 86,112 L30,112 C18,112 8,102 8,90 L8,34 C8,22 18,12 30,12 Z" />
+
+    <!-- Open Book: Center Spine -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M55.5,33 C55.5,31.3 56.8,30 58.5,30 C60.2,30 61.5,31.3 61.5,33 L61.5,83 C61.5,84.7 60.2,86 58.5,86 C56.8,86 55.5,84.7 55.5,83 Z" />
+
+    <!-- Open Book: Left Page (Solid Black Silhouette) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M55.5,39.5 C46,35.5 39,35.5 31,37.5 L31,75.5 C39,73.5 46,73.5 55.5,77.5 Z" />
+
+    <!-- Open Book: Right Page (Bold Black Outline, 6px) -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="6"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M61.5,39.5 C71,35.5 78,35.5 86,37.5 L86,75.5 C78,73.5 71,73.5 61.5,77.5" />
+
+    <!-- Small 4-Pointed AI Sparkle (Top Right) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M86,22 Q86,30.5 94.5,30.5 Q86,30.5 86,39 Q86,30.5 77.5,30.5 Q86,30.5 86,22 Z" />
+
+</vector>

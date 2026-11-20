@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Redeus Dictionary - Neo-Brutalist Foreground Layer (Variation 1) -->
+    <!-- Center Spine -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M51.5,29 C51.5,27.6 52.6,26.5 54,26.5 C55.4,26.5 56.5,27.6 56.5,29 L56.5,77 C56.5,78.4 55.4,79.5 54,79.5 C52.6,79.5 51.5,78.4 51.5,77 Z" />
+
+    <!-- Left Open Page (Solid Black Silhouette) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M51.5,35.5 C43,31.5 37,31.5 30,33.5 L30,69.5 C37,67.5 43,67.5 51.5,71.5 Z" />
+
+    <!-- Right Open Page (Bold Black Outline, Stroke Width 5.5) -->
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M56.5,35.5 C65,31.5 71,31.5 78,33.5 L78,69.5 C71,67.5 65,67.5 56.5,71.5" />
+
+    <!-- AI Sparkle (Secondary 4-Pointed Star) -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M78,19 Q78,26.5 85.5,26.5 Q78,26.5 78,34 Q78,26.5 70.5,26.5 Q78,26.5 78,19 Z" />
+
+</vector>
