@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.StarBorder
@@ -153,7 +154,7 @@ fun SentenceMiningHubView(
                     .testTag("sentence_cloze_mode_toggle")
             ) {
                 Icon(
-                    imageVector = if (isClozeMode) Icons.Default.FormatListBulleted else Icons.Default.Psychology,
+                    imageVector = if (isClozeMode) Icons.AutoMirrored.Filled.FormatListBulleted else Icons.Default.Psychology,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp)
                 )

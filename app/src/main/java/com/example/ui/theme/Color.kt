@@ -1,4 +1,4 @@
-package com.example.ui.theme
+﻿package com.example.ui.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
@@ -6,7 +6,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
 // =============================================================================
-// Material Design 3 Tonal Palette — Seed: Scholarly Indigo (#3B5BA9)
+// Material Design 3 Tonal Palette â€” Seed: Scholarly Indigo (#3B5BA9)
 // Tertiary Accent: Warm Ochre/Amber (#B36B00 light / #F2B84B dark)
 // =============================================================================
 
@@ -263,75 +263,3 @@ internal fun presetColorScheme(themeColor: String, darkTheme: Boolean): ColorSch
     }
 }
 
-// =============================================================================
-// Deprecated Neo-Brutalist Compatibility Aliases
-// Kept temporarily so un-migrated screens compile until retired in Phase 8.
-// =============================================================================
-
-@Deprecated("Use MaterialTheme.colorScheme.surfaceContainerLow")
-val NeoCream = Color(0xFFF0EAE0)
-@Deprecated("Use MaterialTheme.colorScheme.surfaceContainerLowest")
-val NeoWhite = Color(0xFFFFFFFF)
-@Deprecated("Use MaterialTheme.colorScheme.onSurface")
-val NeoBlack = Color(0xFF000000)
-@Deprecated("Use MaterialTheme.colorScheme.onSurfaceVariant")
-val NeoNearBlack = Color(0xFF18181B)
-@Deprecated("Use MaterialTheme.colorScheme.surface")
-val NeoDarkBg = Color(0xFF18181B)
-@Deprecated("Use MaterialTheme.colorScheme.surfaceContainer")
-val NeoDarkSurface = Color(0xFF27272A)
-
-@Deprecated("Use MaterialTheme.colorScheme.primary or tertiaryContainer")
-val NeoYellow = Color(0xFFF2B705)
-@Deprecated("Use MaterialTheme.colorScheme.tertiaryContainer")
-val NeoYellowLight = Color(0xFFFDE68A)
-@Deprecated("Use MaterialTheme.colorScheme.error")
-val NeoRed = Color(0xFFD93B2B)
-@Deprecated("Use MaterialTheme.colorScheme.errorContainer")
-val NeoRedLight = Color(0xFFFCA5A5)
-
-@Deprecated("Use MaterialTheme.colorScheme.secondaryContainer")
-val NeoCyan = Color(0xFF38BDF8)
-@Deprecated("Use MaterialTheme.colorScheme.primaryContainer")
-val NeoGreen = Color(0xFF10B981)
-@Deprecated("Use MaterialTheme.colorScheme.tertiaryContainer")
-val NeoPurple = Color(0xFFA855F7)
-@Deprecated("Use MaterialTheme.colorScheme.tertiaryContainer")
-val NeoPink = Color(0xFFFF6584)
-@Deprecated("Use MaterialTheme.colorScheme.tertiaryContainer")
-val NeoOrange = Color(0xFFFB923C)
-@Deprecated("Use MaterialTheme.colorScheme.surfaceContainerHigh")
-val NeoGray = Color(0xFFE2E8F0)
-@Deprecated("Use MaterialTheme.colorScheme.surfaceContainer")
-val NeoMutedBg = Color(0xFFE5DECE)
-
-@Deprecated("Use MaterialTheme.colorScheme.primary")
-val BentoPrimary = Color(0xFF3B5BA9)
-@Deprecated("Use MaterialTheme.colorScheme.primaryContainer")
-val BentoPrimaryContainer = Color(0xFFDAE2FF)
-@Deprecated("Use MaterialTheme.colorScheme.onPrimaryContainer")
-val BentoOnPrimaryContainer = Color(0xFF001848)
-@Deprecated("Use MaterialTheme.colorScheme.secondary")
-val BentoSecondary = Color(0xFF575E71)
-@Deprecated("Use MaterialTheme.colorScheme.secondaryContainer")
-val BentoSecondaryContainer = Color(0xFFDCE2F9)
-@Deprecated("Use MaterialTheme.colorScheme.onSecondaryContainer")
-val BentoOnSecondaryContainer = Color(0xFF141B2C)
-@Deprecated("Use MaterialTheme.colorScheme.surface")
-val BentoLightBg = IndigoLightSurface
-@Deprecated("Use MaterialTheme.colorScheme.surfaceContainerLowest")
-val BentoLightSurface = IndigoLightSurfaceContainerLowest
-@Deprecated("Use MaterialTheme.colorScheme.surface")
-val BentoDarkBg = IndigoDarkSurface
-@Deprecated("Use MaterialTheme.colorScheme.surfaceContainer")
-val BentoDarkSurface = IndigoDarkSurfaceContainer
-@Deprecated("Use MaterialTheme.colorScheme.outlineVariant")
-val BentoBorderLight = IndigoLightOutlineVariant
-@Deprecated("Use MaterialTheme.colorScheme.outline")
-val BentoBorderAlt = IndigoLightOutline
-@Deprecated("Use MaterialTheme.colorScheme.tertiaryContainer")
-val BentoBadgeBg = IndigoLightTertiaryContainer
-@Deprecated("Use MaterialTheme.colorScheme.tertiary")
-val BentoHighlightGold = IndigoLightTertiary
-@Deprecated("Use MaterialTheme.colorScheme.surfaceContainerHigh")
-val BentoPlaceholderBg = IndigoDarkSurfaceContainerHigh

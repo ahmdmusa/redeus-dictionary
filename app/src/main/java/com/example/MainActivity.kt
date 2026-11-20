@@ -24,6 +24,7 @@ import com.example.ui.screens.practice.FlashcardsTabContent
 import com.example.ui.screens.reading.DailyReadingTabContent
 import com.example.ui.screens.review.ReviewTabContent
 import com.example.ui.screens.search.SearchTabContent
+import com.example.ui.screens.settings.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.launch
 
