@@ -1,4 +1,4 @@
-package com.example.ui
+﻿package com.example.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -48,319 +48,6 @@ import com.example.data.MinedSentenceEntity
 import com.example.data.WordEntity
 import com.example.ui.theme.*
 
-/**
- * Prominent Daily Habit Streak & 60-Day Activity Heatmap Banner (GitHub / Anki style)
- */
-@Composable
-fun DailyStreakAndHeatmapBanner(
-    viewModel: DictionaryViewModel,
-    modifier: Modifier = Modifier,
-    initiallyExpanded: Boolean = false
-) {
-    val currentStreak by viewModel.currentStreak.collectAsStateWithLifecycle()
-    val longestStreak by viewModel.longestStreak.collectAsStateWithLifecycle()
-    val heatmap60Days by viewModel.activityHeatmap60Days.collectAsStateWithLifecycle()
-    val todayActions by viewModel.todayHabitActionsCount.collectAsStateWithLifecycle()
-    val dailyGoal by viewModel.dailyGoalTarget.collectAsStateWithLifecycle()
-
-    var isExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
-    var selectedDay by remember { mutableStateOf<DayStreakStatus?>(null) }
-
-    val progress = if (dailyGoal > 0) (todayActions.toFloat() / dailyGoal.toFloat()).coerceIn(0f, 1f) else 0f
-    val goalReached = todayActions >= dailyGoal
-
-    NeoCard(
-        modifier = modifier
-            .fillMaxWidth()
-            .testTag("daily_streak_heatmap_banner"),
-        backgroundColor = NeoWhite
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            // Top Row: Streak Flame Badge + Daily Goal Counter + Expand Heatmap Toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    // Flame Streak Box
-                    Box(
-                        modifier = Modifier
-                            .background(
-                                if (currentStreak > 0) NeoOrange else NeoCream,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .border(2.dp, NeoBlack, shape = RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.LocalFireDepartment,
-                                contentDescription = "Streak",
-                                tint = NeoBlack,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = "$currentStreak DAY STREAK",
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 0.5.sp
-                                ),
-                                color = NeoBlack
-                            )
-                        }
-                    }
-
-                    // Best Streak Pill
-                    Box(
-                        modifier = Modifier
-                            .background(NeoYellowLight, shape = RoundedCornerShape(6.dp))
-                            .border(1.5.dp, NeoBlack, shape = RoundedCornerShape(6.dp))
-                            .padding(horizontal = 8.dp, vertical = 5.dp)
-                    ) {
-                        Text(
-                            text = "BEST: ${longestStreak}D",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Black,
-                                fontSize = 10.sp
-                            ),
-                            color = NeoBlack
-                        )
-                    }
-                }
-
-                // Expand/Collapse 60-Day Heatmap Button
-                Row(
-                    modifier = Modifier
-                        .background(if (isExpanded) NeoYellow else NeoCream, shape = RoundedCornerShape(6.dp))
-                        .border(1.5.dp, NeoBlack, shape = RoundedCornerShape(6.dp))
-                        .clickable { isExpanded = !isExpanded }
-                        .padding(horizontal = 8.dp, vertical = 5.dp)
-                        .testTag("toggle_heatmap_button"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = if (isExpanded) "HIDE MAP" else "60D MAP",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontWeight = FontWeight.Black,
-                            fontSize = 10.sp
-                        ),
-                        color = NeoBlack
-                    )
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = "Toggle Heatmap",
-                        tint = NeoBlack,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Daily Habit Goal Bar
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (goalReached) "DAILY HABIT GOAL COMPLETE! 🎉" else "TODAY'S HABIT GOAL (REVIEWS + SENTENCES)",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Black,
-                        fontSize = 10.sp,
-                        letterSpacing = 0.4.sp
-                    ),
-                    color = if (goalReached) NeoGreen else NeoBlack.copy(alpha = 0.8f)
-                )
-                Text(
-                    text = "$todayActions / $dailyGoal ACTIONS",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.Black,
-                        fontSize = 11.sp
-                    ),
-                    color = NeoBlack
-                )
-            }
-            Spacer(modifier = Modifier.height(5.dp))
-            NeoLinearProgressBar(
-                progress = progress,
-                barColor = if (goalReached) NeoGreen else NeoYellow,
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            // Expandable 60-Day Interactive Contribution Heatmap
-            AnimatedVisibility(visible = isExpanded) {
-                Column(modifier = Modifier.padding(top = 12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        NeoSectionBadge(
-                            title = "60-DAY HABIT ACTIVITY HEATMAP",
-                            containerColor = NeoGreen
-                        )
-                        val activeDaysCount = heatmap60Days.count { it.count > 0 }
-                        Text(
-                            text = "$activeDaysCount / 60 ACTIVE DAYS",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = FontWeight.Black,
-                                fontSize = 10.sp
-                            ),
-                            color = NeoBlack
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // 60-day matrix (6 rows x 10 columns)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(NeoCream, shape = RoundedCornerShape(8.dp))
-                            .border(2.dp, NeoBlack, shape = RoundedCornerShape(8.dp))
-                            .padding(10.dp)
-                    ) {
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(5.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            val daysList = if (heatmap60Days.size >= 60) heatmap60Days else {
-                                val today = java.time.LocalDate.now()
-                                (59 downTo 0).map { offset ->
-                                    val d = today.minusDays(offset.toLong())
-                                    DayStreakStatus(
-                                        epochDay = d.toEpochDay(),
-                                        dateLabel = "${d.monthValue}/${d.dayOfMonth}",
-                                        hasReview = false,
-                                        count = 0,
-                                        isToday = offset == 0
-                                    )
-                                }
-                            }
-
-                            daysList.chunked(10).forEach { rowDays ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                                ) {
-                                    rowDays.forEach { day ->
-                                        val cellColor = when {
-                                            day.count == 0 -> NeoWhite
-                                            day.count in 1..3 -> Color(0xFFA7F3D0) // Light emerald
-                                            day.count in 4..8 -> NeoGreen
-                                            else -> NeoYellow // 9+ high-intensity day
-                                        }
-                                        val isSelected = selectedDay?.epochDay == day.epochDay
-
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .aspectRatio(1f)
-                                                .background(cellColor, shape = RoundedCornerShape(4.dp))
-                                                .border(
-                                                    width = if (isSelected || day.isToday) 2.dp else 1.dp,
-                                                    color = if (isSelected) NeoRed else if (day.isToday || day.count > 0) NeoBlack else NeoBlack.copy(alpha = 0.25f),
-                                                    shape = RoundedCornerShape(4.dp)
-                                                )
-                                                .clickable { selectedDay = day }
-                                                .testTag("heatmap_cell_${day.dateLabel}"),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                text = day.dateLabel.substringAfter('/'),
-                                                fontSize = 8.sp,
-                                                fontWeight = if (day.isToday || day.count > 0) FontWeight.Black else FontWeight.Medium,
-                                                color = NeoBlack
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Selected Day Details or Legend
-                    Spacer(modifier = Modifier.height(8.dp))
-                    val activeDayInfo = selectedDay ?: heatmap60Days.lastOrNull()
-                    if (activeDayInfo != null) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(NeoYellowLight, shape = RoundedCornerShape(6.dp))
-                                .border(1.5.dp, NeoBlack, shape = RoundedCornerShape(6.dp))
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (activeDayInfo.isToday) "📅 TODAY (${activeDayInfo.dateLabel})" else "📅 DATE: ${activeDayInfo.dateLabel}",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                color = NeoBlack
-                            )
-                            Text(
-                                text = "${activeDayInfo.count} LEARNING ACTIONS",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                color = if (activeDayInfo.count > 0) NeoBlack else NeoRed
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    // Intensity Legend
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "INTENSITY:",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Black,
-                            color = NeoBlack
-                        )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            HeatmapLegendItem(color = NeoWhite, label = "0")
-                            HeatmapLegendItem(color = Color(0xFFA7F3D0), label = "1-3")
-                            HeatmapLegendItem(color = NeoGreen, label = "4-8")
-                            HeatmapLegendItem(color = NeoYellow, label = "9+ 🔥")
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HeatmapLegendItem(color: Color, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .background(color, shape = RoundedCornerShape(3.dp))
-                .border(1.dp, NeoBlack, shape = RoundedCornerShape(3.dp))
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = label,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = NeoBlack
-        )
-    }
-}
 
 /**
  * Quick action buttons embedded inside WordDetailsCard Usage Example Card
@@ -446,7 +133,7 @@ fun SentenceMiningHubView(
         "Dining" to "DINING & CAFE",
         "Travel" to "TRAVEL & ERRANDS",
         "Idioms" to "MODERN IDIOMS",
-        "FAVORITES" to "★ SAVED"
+        "FAVORITES" to "â˜… SAVED"
     )
 
     val filteredSentences = remember(allSentences, selectedCategory, searchQuery) {
@@ -495,7 +182,7 @@ fun SentenceMiningHubView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             NeoChip(
-                text = if (isClozeMode) "← SENTENCE LIST" else "🧠 CLOZE PRACTICE",
+                text = if (isClozeMode) "â† SENTENCE LIST" else "ðŸ§  CLOZE PRACTICE",
                 selected = isClozeMode,
                 selectedColor = NeoGreen,
                 unselectedColor = NeoYellowLight,
@@ -708,7 +395,7 @@ fun MinedSentenceCard(
                                 .padding(horizontal = 6.dp, vertical = 3.dp)
                         ) {
                             Text(
-                                text = "✓ ${item.practiceCount}X",
+                                text = "âœ“ ${item.practiceCount}X",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = FontWeight.Black,
                                     fontSize = 10.sp
@@ -800,7 +487,7 @@ fun MinedSentenceCard(
                         color = NeoRed
                     )
                     Text(
-                        text = "🔊 TAP PHRASE",
+                        text = "ðŸ”Š TAP PHRASE",
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontWeight = FontWeight.Black,
                             fontSize = 9.sp
@@ -822,7 +509,7 @@ fun MinedSentenceCard(
                 if (item.notes.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "💡 Context Tip: ${item.notes}",
+                        text = "ðŸ’¡ Context Tip: ${item.notes}",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontStyle = FontStyle.Italic,
                             fontWeight = FontWeight.Bold
@@ -1035,7 +722,7 @@ fun SentenceClozePracticeView(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "REVEAL PHRASE & LISTEN 🔊",
+                        text = "REVEAL PHRASE & LISTEN ðŸ”Š",
                         fontWeight = FontWeight.Black,
                         fontSize = 13.sp
                     )
@@ -1164,7 +851,7 @@ fun AddCustomSentenceDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     NeoSectionBadge(
-                        title = "⛏️ MINE NEW SENTENCE",
+                        title = "â›ï¸ MINE NEW SENTENCE",
                         containerColor = NeoYellow
                     )
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {

@@ -41,6 +41,7 @@ import coil.request.ImageRequest
 import com.example.R
 import com.example.data.WordEntity
 import com.example.ui.*
+import com.example.ui.components.*
 import com.example.ui.navigation.LocalWindowWidthSizeClass
 import com.example.ui.theme.LocalReducedMotionEnabled
 import com.example.ui.theme.RedeusExpressiveType
@@ -566,17 +567,7 @@ fun WordDetailsCard(
                             }
                             CardStatusBadge(wordEntity = wordEntity)
                             if (wordEntity.isLeech) {
-                                Surface(
-                                    shape = MaterialTheme.shapes.extraSmall,
-                                    color = MaterialTheme.colorScheme.errorContainer,
-                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                                ) {
-                                    Text(
-                                        text = if (wordEntity.lapses > 0) "Leech • ${wordEntity.lapses}" else "Leech",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
+                                LeechBadge(lapses = wordEntity.lapses)
                             }
                         }
                     }
@@ -660,7 +651,7 @@ fun WordDetailsCard(
                     }
                 }
 
-                NeoWordTagsRow(word = wordEntity, viewModel = viewModel)
+                WordTagsRow(word = wordEntity, viewModel = viewModel)
             }
         }
 
