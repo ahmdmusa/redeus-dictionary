@@ -19,6 +19,7 @@ import com.example.reminder.ReminderHelper
 import com.example.ui.*
 import com.example.ui.navigation.LocalWindowWidthSizeClass
 import com.example.ui.navigation.RedeusAppShell
+import com.example.ui.screens.library.LibraryTabContent
 import com.example.ui.screens.search.SearchTabContent
 import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.launch
