@@ -29,13 +29,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.WordEntity
 import com.example.ui.DictionaryViewModel
-import com.example.ui.SentenceMiningHubView
 import com.example.ui.WordStatusFilter
 import com.example.ui.components.CardStatusBadge
 import com.example.ui.components.DailyStreakAndHeatmapBanner
 import com.example.ui.components.LeechBadge
 import com.example.ui.components.WordTagsRow
 import com.example.ui.navigation.LocalWindowWidthSizeClass
+import com.example.ui.screens.mining.SentenceMiningHubView
 import com.example.ui.screens.search.WordDetailsCard
 import com.example.ui.theme.LocalReducedMotionEnabled
 import com.example.ui.theme.RedeusMotion

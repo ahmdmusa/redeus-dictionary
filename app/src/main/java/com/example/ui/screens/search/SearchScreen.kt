@@ -43,6 +43,7 @@ import com.example.data.WordEntity
 import com.example.ui.*
 import com.example.ui.components.*
 import com.example.ui.navigation.LocalWindowWidthSizeClass
+import com.example.ui.screens.mining.ExampleSentenceMiningActionsRow
 import com.example.ui.theme.LocalReducedMotionEnabled
 import com.example.ui.theme.RedeusExpressiveType
 import com.example.ui.theme.RedeusMotion

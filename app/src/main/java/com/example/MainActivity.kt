@@ -21,6 +21,7 @@ import com.example.ui.navigation.LocalWindowWidthSizeClass
 import com.example.ui.navigation.RedeusAppShell
 import com.example.ui.screens.library.LibraryTabContent
 import com.example.ui.screens.practice.FlashcardsTabContent
+import com.example.ui.screens.reading.DailyReadingTabContent
 import com.example.ui.screens.review.ReviewTabContent
 import com.example.ui.screens.search.SearchTabContent
 import com.example.ui.theme.MyApplicationTheme
