@@ -24,6 +24,8 @@ object ReminderHelper {
     private const val PREFS_NAME = "vocab_ai_prefs"
     const val KEY_REMINDERS_ENABLED = "reminders_enabled"
     const val KEY_ALWAYS_NOTIFY = "reminders_always_notify"
+    const val KEY_REMINDER_HOUR = "reminder_hour"
+    const val KEY_REMINDER_MINUTE = "reminder_minute"
     private const val KEY_LAST_NOTIFIED_DATE = "last_notified_date"
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -51,6 +53,27 @@ object ReminderHelper {
     fun setAlwaysNotifyEnabled(context: Context, enabled: Boolean) {
         Log.i(TAG, "Setting always notify: $enabled")
         getPrefs(context).edit().putBoolean(KEY_ALWAYS_NOTIFY, enabled).apply()
+    }
+
+    fun getReminderHour(context: Context): Int {
+        return getPrefs(context).getInt(KEY_REMINDER_HOUR, 12).coerceIn(0, 23)
+    }
+
+    fun getReminderMinute(context: Context): Int {
+        return getPrefs(context).getInt(KEY_REMINDER_MINUTE, 0).coerceIn(0, 59)
+    }
+
+    fun setReminderTime(context: Context, hour: Int, minute: Int) {
+        val safeHour = hour.coerceIn(0, 23)
+        val safeMinute = minute.coerceIn(0, 59)
+        Log.i(TAG, "Setting reminder time: $safeHour:$safeMinute")
+        getPrefs(context).edit()
+            .putInt(KEY_REMINDER_HOUR, safeHour)
+            .putInt(KEY_REMINDER_MINUTE, safeMinute)
+            .apply()
+        if (areRemindersEnabled(context)) {
+            scheduleDailyReminder(context)
+        }
     }
 
     fun getLastNotifiedDate(context: Context): String {
@@ -116,14 +139,16 @@ object ReminderHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val reminderHour = getReminderHour(context)
+        val reminderMinute = getReminderMinute(context)
         val calendar = Calendar.getInstance().apply {
             timeInMillis = System.currentTimeMillis()
-            set(Calendar.HOUR_OF_DAY, 12)
-            set(Calendar.MINUTE, 0)
+            set(Calendar.HOUR_OF_DAY, reminderHour)
+            set(Calendar.MINUTE, reminderMinute)
             set(Calendar.SECOND, 0)
             set(Calendar.MILLISECOND, 0)
 
-            // If it's already past 12:00 PM today, schedule for 12:00 PM tomorrow
+            // If the scheduled time has already passed today, schedule for tomorrow
             if (timeInMillis <= System.currentTimeMillis()) {
                 add(Calendar.DAY_OF_YEAR, 1)
             }

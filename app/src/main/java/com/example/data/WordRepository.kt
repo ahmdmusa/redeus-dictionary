@@ -161,8 +161,8 @@ class WordRepository(
         val pexelsKey = if (hasValidKey) userKey else "test_pexels_key"
 
         val effectiveQuerySource = querySourceOverride
-            ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_query_source", "image_prompt")
-            ?: "image_prompt"
+            ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_query_source", "word")
+            ?: "word"
 
         val cleanWord = wordEntity.word.trim().lowercase()
         val cacheKey = "$cleanWord:$effectiveQuerySource"
@@ -294,7 +294,7 @@ class WordRepository(
         openRouterApiKey: String = "",
         pexelsQuerySource: String? = null,
         geminiApiKeys: List<String> = emptyList(),
-        geminiModel: String = "gemini-2.5-flash",
+        geminiModel: String = "gemini-3.5-flash-lite",
         pexelsApiKey: String = ""
     ): Result<WordEntity> = withContext(Dispatchers.IO) {
         val cleanWord = word.trim().lowercase()
@@ -319,10 +319,8 @@ class WordRepository(
             Return ONLY raw, valid JSON. Do NOT wrap your output in markdown code blocks (e.g. do not use ```json or ```).
         """.trimIndent()
 
-        // Determine image source preference (default: "ai")
-        val effectiveImageSource = imageSource
-            ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("image_source", "ai")
-            ?: "ai"
+        // Real photo ("web") is always used as the image source
+        val effectiveImageSource = "web"
 
         val shouldGenerateImagePrompt = aiVisualizationsEnabled || effectiveImageSource == "web"
 
@@ -375,7 +373,7 @@ class WordRepository(
         val keysToUse = if (geminiApiKeys.isNotEmpty()) geminiApiKeys else if (apiKey.isNotBlank()) listOf(apiKey) else emptyList()
         val effectiveOpenRouterKey = if (openRouterApiKey.isNotBlank()) openRouterApiKey else (context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("openrouter_api_key", "") ?: "")
         val effectivePexelsKey = if (pexelsApiKey.isNotBlank()) pexelsApiKey else (context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_api_key", "") ?: "")
-        val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-2.5-flash" }
+        val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-3.5-flash-lite" }
 
         val aiResult = fetchAiTextWithFallback(
             tag = "searchWord",
@@ -398,10 +396,8 @@ class WordRepository(
                         return@withContext Result.failure(IllegalArgumentException("'$cleanWord' was not recognized as a valid English word, phrase, or term."))
                     }
 
-                    // Determine image source preference (default: "ai")
-                    val effectiveImageSource = imageSource
-                        ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("image_source", "ai")
-                        ?: "ai"
+                    // Real photo ("web") is always used as the image source
+                    val effectiveImageSource = "web"
 
                     var finalImagePrompt = apiResponse.imagePrompt
                     val cleanAiPrompt = apiResponse.imagePrompt
@@ -419,8 +415,8 @@ class WordRepository(
                             val pexelsKey = if (hasValidKey) effectivePexelsKey else "test_pexels_key"
                             try {
                                 val effectivePexelsQuerySource = pexelsQuerySource
-                                    ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_query_source", "image_prompt")
-                                    ?: "image_prompt"
+                                    ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_query_source", "word")
+                                    ?: "word"
 
                                 val derivedQuery = when (effectivePexelsQuerySource) {
                                     "word" -> cleanWord
@@ -602,7 +598,7 @@ class WordRepository(
         apiKey: String = "",
         openRouterApiKey: String = "",
         geminiApiKeys: List<String> = emptyList(),
-        geminiModel: String = "gemini-2.5-flash"
+        geminiModel: String = "gemini-3.5-flash-lite"
     ): Result<ReadingPassageResponse> = withContext(Dispatchers.IO) {
         val cefrLevel = when (readingLevel) {
             1, 2 -> "A2"
@@ -717,7 +713,7 @@ class WordRepository(
 
         val keysToUse = if (geminiApiKeys.isNotEmpty()) geminiApiKeys else if (apiKey.isNotBlank()) listOf(apiKey) else emptyList()
         val effectiveOpenRouterKey = if (openRouterApiKey.isNotBlank()) openRouterApiKey else (context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("openrouter_api_key", "") ?: "")
-        val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-2.5-flash" }
+        val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-3.5-flash-lite" }
 
         val aiResult = fetchAiTextWithFallback(
             tag = "generateDailyReading",
@@ -788,7 +784,7 @@ class WordRepository(
     private suspend fun fetchAiTextWithFallback(
         tag: String,
         geminiApiKeys: List<String>,
-        geminiModel: String = "gemini-2.5-flash",
+        geminiModel: String = "gemini-3.5-flash-lite",
         geminiRequest: GenerateContentRequest,
         systemPrompt: String,
         userPrompt: String,
@@ -799,7 +795,7 @@ class WordRepository(
 
         if (!isLocked && validGeminiKeys.isNotEmpty()) {
             var lastGeminiEx: Exception? = null
-            val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-2.5-flash" }
+            val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-3.5-flash-lite" }
 
             for ((idx, key) in validGeminiKeys.withIndex()) {
                 try {
@@ -930,6 +926,58 @@ class WordRepository(
             text = text.substring(firstBrace, lastBrace + 1)
         }
         return text.trim()
+    }
+
+    suspend fun testGeminiApiKey(
+        apiKey: String,
+        geminiModel: String = "gemini-3.5-flash-lite"
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val cleanKey = apiKey.trim()
+        if (cleanKey.isBlank()) {
+            return@withContext Result.failure(IllegalArgumentException("Please enter a Gemini API key first."))
+        }
+        val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-3.5-flash-lite" }
+        val request = GenerateContentRequest(
+            contents = listOf(Content(parts = listOf(Part(text = "Reply with OK")))),
+            generationConfig = GenerationConfig(temperature = 0.0f)
+        )
+        runCatching {
+            val response = apiService.generateContentWithModel(effectiveModel, cleanKey, request)
+            val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            if (text.isNullOrBlank()) {
+                error("API responded with an empty message.")
+            }
+            "Connected ($effectiveModel)"
+        }
+    }
+
+    suspend fun translateWordToArabic(
+        word: String,
+        definition: String,
+        geminiApiKeys: List<String>,
+        geminiModel: String = "gemini-3.5-flash-lite",
+        openRouterApiKey: String = ""
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val systemPrompt = "You are a concise English-to-Arabic dictionary translator. Return ONLY the Arabic translation and brief Arabic meaning in 1-2 short lines, with no English intro or markdown."
+        val userPrompt = "Translate the English word \"$word\" (definition: \"$definition\") into natural Arabic."
+        val request = GenerateContentRequest(
+            contents = listOf(Content(parts = listOf(Part(text = userPrompt)))),
+            generationConfig = GenerationConfig(temperature = 0.2f),
+            systemInstruction = Content(parts = listOf(Part(text = systemPrompt)))
+        )
+        val effectiveOpenRouterKey = if (openRouterApiKey.isNotBlank()) openRouterApiKey else (
+            context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("openrouter_api_key", "") ?: ""
+        )
+        val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-3.5-flash-lite" }
+        fetchAiTextWithFallback(
+            tag = "arabicTranslation",
+            geminiApiKeys = geminiApiKeys,
+            geminiModel = effectiveModel,
+            geminiRequest = request,
+            systemPrompt = systemPrompt,
+            userPrompt = userPrompt,
+            openRouterApiKey = effectiveOpenRouterKey
+        ).map { it.trim() }
     }
 
     companion object {

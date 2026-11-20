@@ -395,6 +395,7 @@ class ExampleRobolectricTest {
     )
     db.wordDao().insertWord(word)
 
+    viewModel.setPexelsQuerySource("image_prompt")
     viewModel.cycleNextPhoto(word)
     waitForPhotoCycle(viewModel)
 
@@ -603,9 +604,9 @@ class ExampleRobolectricTest {
     val repository = WordRepository(db.wordDao(), GeminiApiService.create(), context = context)
     val viewModel = DictionaryViewModel(context, repository)
 
-    // Default must be "image_prompt"
-    assertEquals("image_prompt", viewModel.getPexelsQuerySource())
-    assertEquals("image_prompt", viewModel.pexelsQuerySource.value)
+    // Default must be "word"
+    assertEquals("word", viewModel.getPexelsQuerySource())
+    assertEquals("word", viewModel.pexelsQuerySource.value)
 
     // Update to "word"
     viewModel.setPexelsQuerySource("word")
@@ -1691,7 +1692,7 @@ class ExampleRobolectricTest {
     val viewModel = DictionaryViewModel(application, repository)
 
     // Verify defaults
-    assertEquals("sm2", viewModel.srsAlgorithm.value)
+    assertEquals("fsrs", viewModel.srsAlgorithm.value)
     assertEquals(90, viewModel.targetRetention.value)
 
     // Test settings toggle
@@ -1772,6 +1773,7 @@ class ExampleRobolectricTest {
     val wordDao = db.wordDao()
     val repository = WordRepository(wordDao = wordDao, apiService = GeminiApiService.create(), context = application)
     val viewModel = DictionaryViewModel(application, repository)
+    viewModel.setSrsAlgorithm("sm2")
 
     val today = java.time.LocalDate.now().toEpochDay()
 

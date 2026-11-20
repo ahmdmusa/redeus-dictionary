@@ -45,7 +45,7 @@ fun DailyStreakAndHeatmapBanner(
     val dailyGoal by viewModel.dailyGoalTarget.collectAsStateWithLifecycle()
     val reducedMotion = LocalReducedMotionEnabled.current
 
-    var isExpanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
+    var isExpanded by remember { mutableStateOf(initiallyExpanded) }
     var selectedDay by remember { mutableStateOf<DayStreakStatus?>(null) }
 
     val progress = if (dailyGoal > 0) (todayActions.toFloat() / dailyGoal.toFloat()).coerceIn(0f, 1f) else 0f
@@ -122,7 +122,7 @@ fun DailyStreakAndHeatmapBanner(
                         .testTag("toggle_heatmap_button")
                 ) {
                     Text(
-                        text = if (isExpanded) "Hide map" else "60-day map",
+                        text = if (isExpanded) "Hide map" else "Show map",
                         style = MaterialTheme.typography.labelLarge
                     )
                     Spacer(modifier = Modifier.width(4.dp))

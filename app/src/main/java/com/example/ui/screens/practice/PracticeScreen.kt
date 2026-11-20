@@ -364,7 +364,7 @@ fun FlashcardItem(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .aspectRatio(16f / 9f)
+                                .aspectRatio(4f / 3f)
                                 .clip(MaterialTheme.shapes.medium)
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         ) {
@@ -420,7 +420,7 @@ fun FlashcardItem(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "$displayPhonetic ($selectedAccent)",
+                            text = displayPhonetic,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary
                         )

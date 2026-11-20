@@ -308,8 +308,7 @@ class DictionaryViewModel(
     private val _pronunciationSource = MutableStateFlow("auto")
     val pronunciationSource: StateFlow<String> = _pronunciationSource.asStateFlow()
 
-    private val _selectedAccent = MutableStateFlow("US")
-    val selectedAccent: StateFlow<String> = _selectedAccent.asStateFlow()
+    val selectedAccent: StateFlow<String> = MutableStateFlow("US").asStateFlow()
 
     private val _speechSpeed = MutableStateFlow("Normal")
     val speechSpeed: StateFlow<String> = _speechSpeed.asStateFlow()
@@ -323,8 +322,41 @@ class DictionaryViewModel(
     private val _alwaysNotifyEnabled = MutableStateFlow(false)
     val alwaysNotifyEnabled: StateFlow<Boolean> = _alwaysNotifyEnabled.asStateFlow()
 
+    private val _reminderHour = MutableStateFlow(12)
+    val reminderHour: StateFlow<Int> = _reminderHour.asStateFlow()
+
+    private val _reminderMinute = MutableStateFlow(0)
+    val reminderMinute: StateFlow<Int> = _reminderMinute.asStateFlow()
+
     private val _selectedThemeColor = MutableStateFlow("purple")
     val selectedThemeColor: StateFlow<String> = _selectedThemeColor.asStateFlow()
+
+    private val _themeMode = MutableStateFlow("system") // "system", "light", "dark"
+    val themeMode: StateFlow<String> = _themeMode.asStateFlow()
+
+    private val _dynamicColorEnabled = MutableStateFlow(true)
+    val dynamicColorEnabled: StateFlow<Boolean> = _dynamicColorEnabled.asStateFlow()
+
+    private val _useSeparateTtsKeys = MutableStateFlow(false)
+    val useSeparateTtsKeys: StateFlow<Boolean> = _useSeparateTtsKeys.asStateFlow()
+
+    private val _isTestingGeminiKey = MutableStateFlow(false)
+    val isTestingGeminiKey: StateFlow<Boolean> = _isTestingGeminiKey.asStateFlow()
+
+    private val _geminiKeyTestStatus = MutableStateFlow<Pair<Boolean, String>?>(null) // Pair(isSuccess, message)
+    val geminiKeyTestStatus: StateFlow<Pair<Boolean, String>?> = _geminiKeyTestStatus.asStateFlow()
+
+    private val _arabicTranslationEnabled = MutableStateFlow(false)
+    val arabicTranslationEnabled: StateFlow<Boolean> = _arabicTranslationEnabled.asStateFlow()
+
+    private val _wordArabicTranslations = MutableStateFlow<Map<String, String>>(emptyMap())
+    val wordArabicTranslations: StateFlow<Map<String, String>> = _wordArabicTranslations.asStateFlow()
+
+    private val _translatingArabicWord = MutableStateFlow<String?>(null)
+    val translatingArabicWord: StateFlow<String?> = _translatingArabicWord.asStateFlow()
+
+    private val _isBackupBusy = MutableStateFlow(false)
+    val isBackupBusy: StateFlow<Boolean> = _isBackupBusy.asStateFlow()
 
     // Dynamic Gemini TTS API Key list & Active selection (0-based)
     private val _geminiApiKeys = MutableStateFlow<List<String>>(emptyList())
@@ -342,9 +374,17 @@ class DictionaryViewModel(
     private val _activeKeyIndex = MutableStateFlow(0) // 0-based index
     val activeKeyIndex: StateFlow<Int> = _activeKeyIndex.asStateFlow()
 
-    // 30-second global TTS network throttle
+    // Global TTS network throttle (configurable in Settings, default 30s)
     private var lastTtsNetworkCallTimestamp: Long = 0L
     var ttsThrottleCooldownMs: Long = 30_000L
+
+    private val _ttsCooldownSeconds = MutableStateFlow(30)
+    val ttsCooldownSeconds: StateFlow<Int> = _ttsCooldownSeconds.asStateFlow()
+
+    // Word / AI API network throttle (configurable in Settings, default 5s)
+    private var lastWordApiNetworkCallTimestamp: Long = 0L
+    private val _wordApiCooldownSeconds = MutableStateFlow(5)
+    val wordApiCooldownSeconds: StateFlow<Int> = _wordApiCooldownSeconds.asStateFlow()
 
     // Last pronunciation source tracker ("Gemini Key 1", "Gemini Key 2", "Device TTS")
     private val _lastPronunciationSource = MutableStateFlow(
@@ -355,10 +395,9 @@ class DictionaryViewModel(
     )
     val lastPronunciationSource: StateFlow<String> = _lastPronunciationSource.asStateFlow()
 
-    private val _imageSourcePreference = MutableStateFlow("ai")
-    val imageSourcePreference: StateFlow<String> = _imageSourcePreference.asStateFlow()
+    val imageSourcePreference: StateFlow<String> = MutableStateFlow("web").asStateFlow()
 
-    private val _pexelsQuerySource = MutableStateFlow("image_prompt")
+    private val _pexelsQuerySource = MutableStateFlow("word")
     val pexelsQuerySource: StateFlow<String> = _pexelsQuerySource.asStateFlow()
 
     // Dynamic Gemini Meaning & Reading API Key list, Active index, Model selection, OpenRouter Key, Pexels Key
@@ -368,10 +407,10 @@ class DictionaryViewModel(
     private val _geminiMeaningActiveKeyIndex = MutableStateFlow(0)
     val geminiMeaningActiveKeyIndex: StateFlow<Int> = _geminiMeaningActiveKeyIndex.asStateFlow()
 
-    private val _geminiMeaningModelChoice = MutableStateFlow("gemini-2.5-flash")
+    private val _geminiMeaningModelChoice = MutableStateFlow("gemini-3.5-flash-lite")
     val geminiMeaningModelChoice: StateFlow<String> = _geminiMeaningModelChoice.asStateFlow()
 
-    private val _geminiMeaningCustomModel = MutableStateFlow("gemini-2.5-flash")
+    private val _geminiMeaningCustomModel = MutableStateFlow("gemini-3.5-flash-lite")
     val geminiMeaningCustomModel: StateFlow<String> = _geminiMeaningCustomModel.asStateFlow()
 
     private val _openRouterApiKey = MutableStateFlow("")
@@ -414,15 +453,7 @@ class DictionaryViewModel(
         _dailyReadingUiState.value = DailyReadingUiState.Idle
     }
 
-    fun getImageSourcePreference(): String {
-        return _imageSourcePreference.value
-    }
-
-    fun setImageSourcePreference(value: String) {
-        _imageSourcePreference.value = value
-        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-        sharedPrefs.edit().putString("image_source", value).apply()
-    }
+    fun getImageSourcePreference(): String = "web"
 
     fun getPexelsQuerySource(): String {
         return _pexelsQuerySource.value
@@ -539,13 +570,6 @@ class DictionaryViewModel(
         _pronunciationSource.value = source
         val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
         sharedPrefs.edit().putString("pronunciation_source", source).apply()
-    }
-
-    fun setSelectedAccent(accent: String) {
-        _selectedAccent.value = accent
-        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-        sharedPrefs.edit().putString("selected_accent", accent).apply()
-        updateTtsSettings()
     }
 
     fun setSpeechSpeed(speed: String) {
@@ -692,6 +716,33 @@ class DictionaryViewModel(
         lastTtsNetworkCallTimestamp = 0L
     }
 
+    fun setTtsCooldownSeconds(seconds: Int) {
+        val safe = seconds.coerceIn(0, 120)
+        _ttsCooldownSeconds.value = safe
+        ttsThrottleCooldownMs = safe * 1000L
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putInt("tts_cooldown_seconds", safe).apply()
+    }
+
+    fun setWordApiCooldownSeconds(seconds: Int) {
+        val safe = seconds.coerceIn(0, 120)
+        _wordApiCooldownSeconds.value = safe
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putInt("word_api_cooldown_seconds", safe).apply()
+    }
+
+    fun isWordApiThrottled(): Boolean {
+        val cooldownMs = _wordApiCooldownSeconds.value * 1000L
+        if (cooldownMs <= 0L || lastWordApiNetworkCallTimestamp == 0L) return false
+        return (System.currentTimeMillis() - lastWordApiNetworkCallTimestamp) < cooldownMs
+    }
+
+    private fun getWordApiCooldownRemainingSec(): Long {
+        val cooldownMs = _wordApiCooldownSeconds.value * 1000L
+        val elapsed = System.currentTimeMillis() - lastWordApiNetworkCallTimestamp
+        return ((cooldownMs - elapsed + 999L) / 1000L).coerceAtLeast(1L)
+    }
+
     private fun saveGeminiMeaningApiKeysToPrefs(keys: List<String>) {
         val jsonArray = JSONArray()
         for (k in keys) {
@@ -789,15 +840,151 @@ class DictionaryViewModel(
         sharedPrefs.edit().putString("pexels_api_key", key).apply()
     }
 
+    fun setThemeMode(mode: String) {
+        val normalized = when (mode.lowercase()) {
+            "light" -> "light"
+            "dark" -> "dark"
+            else -> "system"
+        }
+        _themeMode.value = normalized
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putString("theme_mode", normalized).apply()
+    }
+
+    fun setDynamicColorEnabled(enabled: Boolean) {
+        _dynamicColorEnabled.value = enabled
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putBoolean("dynamic_color_enabled", enabled).apply()
+    }
+
+    fun setUseSeparateTtsKeys(enabled: Boolean) {
+        _useSeparateTtsKeys.value = enabled
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putBoolean("use_separate_tts_keys", enabled).apply()
+    }
+
+    fun setReminderTime(hour: Int, minute: Int) {
+        val safeHour = hour.coerceIn(0, 23)
+        val safeMinute = minute.coerceIn(0, 59)
+        _reminderHour.value = safeHour
+        _reminderMinute.value = safeMinute
+        com.example.reminder.ReminderHelper.setReminderTime(getApplication(), safeHour, safeMinute)
+    }
+
+    fun setArabicTranslationEnabled(enabled: Boolean) {
+        _arabicTranslationEnabled.value = enabled
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putBoolean("arabic_translation_enabled", enabled).apply()
+    }
+
+    fun testActiveGeminiKey() {
+        val keys = getOrderedGeminiMeaningKeys()
+        if (keys.isEmpty()) {
+            _geminiKeyTestStatus.value = false to "Add a Gemini API key first."
+            return
+        }
+        val keyToTest = keys.first()
+        val model = getEffectiveGeminiMeaningModel()
+        _isTestingGeminiKey.value = true
+        _geminiKeyTestStatus.value = null
+        viewModelScope.launch {
+            val result = repository.testGeminiApiKey(keyToTest, model)
+            _isTestingGeminiKey.value = false
+            result.onSuccess { msg ->
+                _geminiKeyTestStatus.value = true to msg
+            }.onFailure { err ->
+                _geminiKeyTestStatus.value = false to (err.message ?: "Connection failed")
+            }
+        }
+    }
+
+    fun translateWordToArabic(wordEntity: WordEntity) {
+        val key = wordEntity.word.trim().lowercase()
+        if (key.isBlank()) return
+        if (_wordArabicTranslations.value.containsKey(key)) return
+
+        val prefs = getApplication<Application>().getSharedPreferences("arabic_translations", android.content.Context.MODE_PRIVATE)
+        val cached = prefs.getString("ar_$key", null)
+        if (!cached.isNullOrBlank()) {
+            _wordArabicTranslations.value = _wordArabicTranslations.value + (key to cached)
+            return
+        }
+
+        _translatingArabicWord.value = key
+        viewModelScope.launch {
+            val result = repository.translateWordToArabic(
+                word = wordEntity.word,
+                definition = wordEntity.definition,
+                geminiApiKeys = getOrderedGeminiMeaningKeys(),
+                geminiModel = getEffectiveGeminiMeaningModel(),
+                openRouterApiKey = _openRouterApiKey.value.trim()
+            )
+            _translatingArabicWord.value = null
+            result.onSuccess { arabicText ->
+                prefs.edit().putString("ar_$key", arabicText).apply()
+                _wordArabicTranslations.value = _wordArabicTranslations.value + (key to arabicText)
+            }.onFailure { err ->
+                _snackbarMessage.tryEmit(err.message ?: "Failed to translate to Arabic")
+            }
+        }
+    }
+
+    fun exportBackupJson(uri: android.net.Uri) {
+        if (_isBackupBusy.value) return
+        _isBackupBusy.value = true
+        viewModelScope.launch {
+            val result = com.example.data.BackupManager.exportBackupJson(getApplication(), uri)
+            _isBackupBusy.value = false
+            result.onSuccess { summary ->
+                _snackbarMessage.tryEmit(
+                    "Backup exported (${summary.wordsCount} words, ${summary.sentencesCount} sentences)"
+                )
+            }.onFailure { err ->
+                _snackbarMessage.tryEmit("Export failed: ${err.message ?: "Unknown error"}")
+            }
+        }
+    }
+
+    fun importBackupJson(uri: android.net.Uri) {
+        if (_isBackupBusy.value) return
+        _isBackupBusy.value = true
+        viewModelScope.launch {
+            val result = com.example.data.BackupManager.importBackupJson(getApplication(), uri)
+            _isBackupBusy.value = false
+            result.onSuccess { summary ->
+                refreshStats()
+                _snackbarMessage.tryEmit(
+                    "Restored ${summary.wordsCount} words, ${summary.sentencesCount} sentences"
+                )
+            }.onFailure { err ->
+                _snackbarMessage.tryEmit("Restore failed: ${err.message ?: "Invalid backup file"}")
+            }
+        }
+    }
+
+    fun exportAnkiCsv(uri: android.net.Uri) {
+        if (_isBackupBusy.value) return
+        _isBackupBusy.value = true
+        viewModelScope.launch {
+            val result = com.example.data.BackupManager.exportAnkiCsv(getApplication(), uri)
+            _isBackupBusy.value = false
+            result.onSuccess { count ->
+                _snackbarMessage.tryEmit("Exported $count words to Anki CSV")
+            }.onFailure { err ->
+                _snackbarMessage.tryEmit("CSV export failed: ${err.message ?: "Unknown error"}")
+            }
+        }
+    }
+
     fun getEffectiveGeminiMeaningModel(): String {
         val choice = _geminiMeaningModelChoice.value.trim()
         val raw = if (choice.equals("custom", ignoreCase = true) || choice.equals("custom...", ignoreCase = true)) {
             val custom = _geminiMeaningCustomModel.value.trim()
-            if (custom.isNotBlank()) custom else "gemini-2.5-flash"
+            if (custom.isNotBlank()) custom else "gemini-3.5-flash-lite"
         } else if (choice.isNotBlank()) {
             choice
         } else {
-            "gemini-2.5-flash"
+            "gemini-3.5-flash-lite"
         }
         return normalizeGeminiModel(raw)
     }
@@ -1249,7 +1436,7 @@ class DictionaryViewModel(
     }
 
     // Spaced Repetition Algorithm Settings StateFlows
-    private val _srsAlgorithm = MutableStateFlow("sm2")
+    private val _srsAlgorithm = MutableStateFlow("fsrs")
     val srsAlgorithm: StateFlow<String> = _srsAlgorithm.asStateFlow()
 
     private val _targetRetention = MutableStateFlow(90)
@@ -1893,8 +2080,7 @@ class DictionaryViewModel(
 
     fun updateTtsSettings() {
         if (isTtsReady) {
-            val locale = if (_selectedAccent.value == "UK") Locale.UK else Locale.US
-            tts?.setLanguage(locale)
+            tts?.setLanguage(Locale.US)
             
             val rate = if (_speechSpeed.value == "Slow") 0.7f else 1.0f
             tts?.setSpeechRate(rate)
@@ -1956,12 +2142,23 @@ class DictionaryViewModel(
                 trimmed.equals("MY_GEMINI_API_KEY", ignoreCase = true)
     }
 
+    private fun effectiveTtsKeysAndActiveIndex(): Pair<List<String>, Int> {
+        if (_useSeparateTtsKeys.value) {
+            return _geminiApiKeys.value to _activeKeyIndex.value
+        }
+        val meaningKeys = _geminiMeaningApiKeys.value
+        if (meaningKeys.any { !isInvalidApiKey(it) }) {
+            return meaningKeys to _geminiMeaningActiveKeyIndex.value
+        }
+        return _geminiApiKeys.value to _activeKeyIndex.value
+    }
+
     fun getGeminiTtsApiKeyForIndex(index: Int): String {
         val override = apiKeyOverride
         if (!override.isNullOrBlank()) {
             return override.trim()
         }
-        val keys = _geminiApiKeys.value
+        val (keys, _) = effectiveTtsKeysAndActiveIndex()
         if (index in keys.indices) {
             val candidate = keys[index]
             if (!isInvalidApiKey(candidate)) {
@@ -2134,11 +2331,11 @@ class DictionaryViewModel(
             return@withContext null
         }
 
-        val keys = _geminiApiKeys.value
+        val (keys, activeIdx) = effectiveTtsKeysAndActiveIndex()
         val candidateIndices: List<Int> = if (keys.isEmpty()) {
             listOf(0)
         } else {
-            val startIdx = if (_activeKeyIndex.value in keys.indices) _activeKeyIndex.value else 0
+            val startIdx = if (activeIdx in keys.indices) activeIdx else 0
             (0 until keys.size).map { (startIdx + it) % keys.size }
         }
 
@@ -2713,6 +2910,18 @@ class DictionaryViewModel(
         _searchUiState.value = SearchUiState.Loading
 
         viewModelScope.launch {
+            val localCached = repository.getLocalWord(cleanWord)
+            if (localCached == null && isWordApiThrottled()) {
+                val remainingSec = getWordApiCooldownRemainingSec()
+                _searchUiState.value = SearchUiState.Error(
+                    "Cooldown active — please wait ${remainingSec}s before the next AI word request."
+                )
+                return@launch
+            }
+            if (localCached == null) {
+                lastWordApiNetworkCallTimestamp = System.currentTimeMillis()
+            }
+
             val geminiKeys = getOrderedGeminiMeaningKeys()
             val geminiModel = getEffectiveGeminiMeaningModel()
             val openRouterKey = _openRouterApiKey.value.trim()
@@ -2721,7 +2930,7 @@ class DictionaryViewModel(
             val result = repository.searchAndFetchWord(
                 word = cleanWord,
                 aiVisualizationsEnabled = _aiVisualizationsEnabled.value,
-                imageSource = _imageSourcePreference.value,
+                imageSource = "web",
                 openRouterApiKey = openRouterKey,
                 pexelsQuerySource = _pexelsQuerySource.value,
                 geminiApiKeys = geminiKeys,
@@ -2751,7 +2960,7 @@ class DictionaryViewModel(
             repository.searchAndFetchWord(
                 word = updated.word,
                 aiVisualizationsEnabled = _aiVisualizationsEnabled.value,
-                imageSource = _imageSourcePreference.value,
+                imageSource = "web",
                 openRouterApiKey = openRouterKey,
                 pexelsQuerySource = _pexelsQuerySource.value,
                 geminiApiKeys = geminiKeys,
@@ -3260,7 +3469,6 @@ class DictionaryViewModel(
         val sharedPrefs = application.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
         _autoPronounceEnabled.value = sharedPrefs.getBoolean("auto_pronounce", true)
         _pronunciationSource.value = sharedPrefs.getString("pronunciation_source", "auto") ?: "auto"
-        _selectedAccent.value = sharedPrefs.getString("selected_accent", "US") ?: "US"
         _speechSpeed.value = sharedPrefs.getString("speech_speed", "Normal") ?: "Normal"
         _aiVisualizationsEnabled.value = sharedPrefs.getBoolean("ai_visualizations_enabled", true)
 
@@ -3342,17 +3550,33 @@ class DictionaryViewModel(
         }
         _geminiMeaningActiveKeyIndex.value = savedMeaningActiveIndex
 
-        _geminiMeaningModelChoice.value = sharedPrefs.getString("gemini_meaning_model_choice", "gemini-2.5-flash") ?: "gemini-2.5-flash"
-        _geminiMeaningCustomModel.value = sharedPrefs.getString("gemini_meaning_custom_model", "gemini-2.5-flash") ?: "gemini-2.5-flash"
+        _geminiMeaningModelChoice.value = sharedPrefs.getString("gemini_meaning_model_choice", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
+        _geminiMeaningCustomModel.value = sharedPrefs.getString("gemini_meaning_custom_model", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
         _openRouterApiKey.value = sharedPrefs.getString("openrouter_api_key", "") ?: ""
         _pexelsApiKey.value = sharedPrefs.getString("pexels_api_key", "") ?: ""
+        val savedTtsCooldown = sharedPrefs.getInt("tts_cooldown_seconds", 30).coerceIn(0, 120)
+        _ttsCooldownSeconds.value = savedTtsCooldown
+        ttsThrottleCooldownMs = savedTtsCooldown * 1000L
+        _wordApiCooldownSeconds.value = sharedPrefs.getInt("word_api_cooldown_seconds", 5).coerceIn(0, 120)
         
         _remindersEnabled.value = com.example.reminder.ReminderHelper.areRemindersEnabled(application)
         _alwaysNotifyEnabled.value = com.example.reminder.ReminderHelper.isAlwaysNotifyEnabled(application)
+        _reminderHour.value = com.example.reminder.ReminderHelper.getReminderHour(application)
+        _reminderMinute.value = com.example.reminder.ReminderHelper.getReminderMinute(application)
         
         _selectedThemeColor.value = sharedPrefs.getString("selected_theme_color", "purple") ?: "purple"
-        _imageSourcePreference.value = sharedPrefs.getString("image_source", "ai") ?: "ai"
-        _pexelsQuerySource.value = sharedPrefs.getString("pexels_query_source", "image_prompt") ?: "image_prompt"
+        _themeMode.value = sharedPrefs.getString("theme_mode", "system") ?: "system"
+        _dynamicColorEnabled.value = sharedPrefs.getBoolean("dynamic_color_enabled", true)
+        _arabicTranslationEnabled.value = sharedPrefs.getBoolean("arabic_translation_enabled", false)
+        _useSeparateTtsKeys.value = if (sharedPrefs.contains("use_separate_tts_keys")) {
+            sharedPrefs.getBoolean("use_separate_tts_keys", false)
+        } else {
+            loadedKeys.any { it.isNotBlank() } && loadedKeys != loadedMeaningKeys
+        }
+        if (sharedPrefs.getString("image_source", null) != "web") {
+            sharedPrefs.edit().putString("image_source", "web").apply()
+        }
+        _pexelsQuerySource.value = sharedPrefs.getString("pexels_query_source", "word") ?: "word"
         _userEnglishLevel.value = sharedPrefs.getString("user_english_level", "A2") ?: "A2"
         _readingLevel.value = sharedPrefs.getInt("reading_level", 1)
 
@@ -3361,7 +3585,7 @@ class DictionaryViewModel(
         _intervalModifier.value = sharedPrefs.getFloat("srs_interval_modifier", 1.0f)
         _hardIntervalMultiplier.value = sharedPrefs.getFloat("srs_hard_interval_multiplier", 1.2f)
         _leechThreshold.value = sharedPrefs.getInt("srs_leech_threshold", sharedPrefs.getInt("leech_threshold", 8))
-        _srsAlgorithm.value = sharedPrefs.getString("srs_algorithm", "sm2") ?: "sm2"
+        _srsAlgorithm.value = sharedPrefs.getString("srs_algorithm", "fsrs") ?: "fsrs"
         _targetRetention.value = sharedPrefs.getInt("srs_target_retention", 90).coerceIn(80, 97)
 
         _currentStreak.value = sharedPrefs.getInt("current_streak", 0)

@@ -44,6 +44,7 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
+      applicationIdSuffix = ".m3"
     }
   }
   compileOptions {

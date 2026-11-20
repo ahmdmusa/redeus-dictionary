@@ -1,9 +1,11 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
@@ -29,10 +31,29 @@ import com.example.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val pendingLookupWord = mutableStateOf<String?>(null)
+
+    private fun extractLookupText(intent: Intent?): String? {
+        if (intent == null) return null
+        val raw = when (intent.action) {
+            Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+            Intent.ACTION_SEND -> if (intent.type == "text/plain") intent.getStringExtra(Intent.EXTRA_TEXT) else null
+            else -> null
+        }
+        return raw?.trim()?.takeIf { it.isNotBlank() }?.take(120)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractLookupText(intent)?.let { pendingLookupWord.value = it }
+    }
+
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        extractLookupText(intent)?.let { pendingLookupWord.value = it }
 
         // Initialize Local Repositories and Services
         val database = AppDatabase.getDatabase(applicationContext)
@@ -62,15 +83,36 @@ class MainActivity : ComponentActivity() {
         setContent {
             val windowSizeClass = calculateWindowSizeClass(this)
             val themeColor by viewModel.selectedThemeColor.collectAsStateWithLifecycle()
+            val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+            val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
+            val darkTheme = when (themeMode) {
+                "light" -> false
+                "dark" -> true
+                else -> isSystemInDarkTheme()
+            }
 
             CompositionLocalProvider(
                 LocalWindowWidthSizeClass provides windowSizeClass.widthSizeClass
             ) {
                 MyApplicationTheme(
-                    themeColor = themeColor
+                    themeColor = themeColor,
+                    darkTheme = darkTheme,
+                    dynamicColor = dynamicColorEnabled
                 ) {
                     var selectedTab by rememberSaveable { mutableStateOf(0) } // 0: Search, 1: Library, 2: Reading, 3: Cards, 4: Review
                     var showSettings by rememberSaveable { mutableStateOf(false) }
+                    var settingsInitialTab by rememberSaveable { mutableStateOf(0) }
+
+                    val incomingLookup by pendingLookupWord
+                    LaunchedEffect(incomingLookup) {
+                        val wordToSearch = incomingLookup
+                        if (!wordToSearch.isNullOrBlank()) {
+                            showSettings = false
+                            selectedTab = 0
+                            viewModel.performSearch(wordToSearch)
+                            pendingLookupWord.value = null
+                        }
+                    }
 
                     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
                     val searchUiState by viewModel.searchUiState.collectAsStateWithLifecycle()
@@ -90,7 +132,8 @@ class MainActivity : ComponentActivity() {
                     if (showSettings) {
                         SettingsScreen(
                             viewModel = viewModel,
-                            onNavigateBack = { showSettings = false }
+                            onNavigateBack = { showSettings = false },
+                            initialTab = settingsInitialTab
                         )
                     } else {
                         RedeusAppShell(
@@ -98,14 +141,21 @@ class MainActivity : ComponentActivity() {
                             onSelectTab = { selectedTab = it },
                             cardsDueTodayCount = cardsDueTodayCount,
                             snackbarHostState = snackbarHostState,
-                            onOpenSettings = { showSettings = true }
+                            onOpenSettings = {
+                                settingsInitialTab = 0
+                                showSettings = true
+                            }
                         ) { innerPadding ->
                             when (selectedTab) {
                                 0 -> SearchTabContent(
                                     viewModel = viewModel,
                                     searchQuery = searchQuery,
                                     uiState = searchUiState,
-                                    innerPadding = innerPadding
+                                    innerPadding = innerPadding,
+                                    onOpenApiSettings = {
+                                        settingsInitialTab = 2
+                                        showSettings = true
+                                    }
                                 )
                                 1 -> LibraryTabContent(
                                     viewModel = viewModel,

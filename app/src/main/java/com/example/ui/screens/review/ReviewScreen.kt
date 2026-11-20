@@ -103,7 +103,7 @@ fun ReviewTabContent(
             ) {
                 DailyStreakAndHeatmapBanner(
                     viewModel = viewModel,
-                    initiallyExpanded = true
+                    initiallyExpanded = false
                 )
 
                 Surface(
@@ -334,7 +334,7 @@ fun ReviewTabContent(
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .aspectRatio(16f / 9f)
+                                            .aspectRatio(4f / 3f)
                                             .clip(MaterialTheme.shapes.medium)
                                             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     ) {
@@ -403,7 +403,7 @@ fun ReviewTabContent(
                                 val selectedAccent by viewModel.selectedAccent.collectAsStateWithLifecycle()
                                 val displayPhonetic = getPhoneticForAccent(currentCard.phonetic, selectedAccent)
                                 Text(
-                                    text = "$displayPhonetic ($selectedAccent)",
+                                    text = displayPhonetic,
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )

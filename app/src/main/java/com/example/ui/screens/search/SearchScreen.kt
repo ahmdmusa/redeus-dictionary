@@ -53,7 +53,8 @@ fun SearchTabContent(
     viewModel: DictionaryViewModel,
     searchQuery: String,
     uiState: SearchUiState,
-    innerPadding: PaddingValues
+    innerPadding: PaddingValues,
+    onOpenApiSettings: () -> Unit = {}
 ) {
     val widthSizeClass = LocalWindowWidthSizeClass.current
     val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded
@@ -63,14 +64,16 @@ fun SearchTabContent(
             viewModel = viewModel,
             searchQuery = searchQuery,
             uiState = uiState,
-            innerPadding = innerPadding
+            innerPadding = innerPadding,
+            onOpenApiSettings = onOpenApiSettings
         )
     } else {
         CompactMediumSearchLayout(
             viewModel = viewModel,
             searchQuery = searchQuery,
             uiState = uiState,
-            innerPadding = innerPadding
+            innerPadding = innerPadding,
+            onOpenApiSettings = onOpenApiSettings
         )
     }
 }
@@ -80,9 +83,13 @@ private fun CompactMediumSearchLayout(
     viewModel: DictionaryViewModel,
     searchQuery: String,
     uiState: SearchUiState,
-    innerPadding: PaddingValues
+    innerPadding: PaddingValues,
+    onOpenApiSettings: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
+    val geminiKeys by viewModel.geminiMeaningApiKeys.collectAsStateWithLifecycle()
+    val openRouterKey by viewModel.openRouterApiKey.collectAsStateWithLifecycle()
+    val needsApiSetup = geminiKeys.none { it.trim().isNotBlank() } && openRouterKey.trim().isBlank()
 
     Column(
         modifier = Modifier
@@ -101,6 +108,9 @@ private fun CompactMediumSearchLayout(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             HeroBannerSection()
+            if (needsApiSetup) {
+                ApiSetupPromptCard(onOpenApiSettings = onOpenApiSettings)
+            }
             SearchInputSection(
                 searchQuery = searchQuery,
                 onQueryChange = { viewModel.onSearchQueryChanged(it) },
@@ -110,9 +120,9 @@ private fun CompactMediumSearchLayout(
             SearchResultSection(
                 viewModel = viewModel,
                 searchQuery = searchQuery,
-                uiState = uiState
+                uiState = uiState,
+                onOpenApiSettings = onOpenApiSettings
             )
-            SecurityWarningCard()
         }
     }
 }
@@ -122,8 +132,13 @@ private fun ExpandedSearchLayout(
     viewModel: DictionaryViewModel,
     searchQuery: String,
     uiState: SearchUiState,
-    innerPadding: PaddingValues
+    innerPadding: PaddingValues,
+    onOpenApiSettings: () -> Unit = {}
 ) {
+    val geminiKeys by viewModel.geminiMeaningApiKeys.collectAsStateWithLifecycle()
+    val openRouterKey by viewModel.openRouterApiKey.collectAsStateWithLifecycle()
+    val needsApiSetup = geminiKeys.none { it.trim().isNotBlank() } && openRouterKey.trim().isBlank()
+
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -141,6 +156,9 @@ private fun ExpandedSearchLayout(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             HeroBannerSection()
+            if (needsApiSetup) {
+                ApiSetupPromptCard(onOpenApiSettings = onOpenApiSettings)
+            }
             SearchInputSection(
                 searchQuery = searchQuery,
                 onQueryChange = { viewModel.onSearchQueryChanged(it) },
@@ -150,7 +168,6 @@ private fun ExpandedSearchLayout(
             DiscoverySuggestions { selectedWord ->
                 viewModel.performSearch(selectedWord)
             }
-            SecurityWarningCard()
         }
 
         // Right Pane: Active Result / Loading / Error / Prompt
@@ -198,8 +215,61 @@ private fun ExpandedSearchLayout(
                 SearchResultSection(
                     viewModel = viewModel,
                     searchQuery = searchQuery,
-                    uiState = uiState
+                    uiState = uiState,
+                    onOpenApiSettings = onOpenApiSettings
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApiSetupPromptCard(onOpenApiSettings: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("api_setup_prompt_card"),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Key,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp)
+                )
+                Text(
+                    text = "Add your free Gemini API key to get started",
+                    style = MaterialTheme.typography.titleSmall
+                )
+            }
+            Text(
+                text = "One Gemini key powers definitions, Daily Reading, and AI pronunciation.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            FilledTonalButton(
+                onClick = onOpenApiSettings,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("open_api_settings_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Open API settings")
             }
         }
     }
@@ -299,7 +369,8 @@ private fun SearchInputSection(
 private fun SearchResultSection(
     viewModel: DictionaryViewModel,
     searchQuery: String,
-    uiState: SearchUiState
+    uiState: SearchUiState,
+    onOpenApiSettings: () -> Unit = {}
 ) {
     val reducedMotion = LocalReducedMotionEnabled.current
 
@@ -357,7 +428,8 @@ private fun SearchResultSection(
             is SearchUiState.Error -> {
                 ErrorStateCard(
                     message = state.message,
-                    onRetry = { viewModel.performSearch(searchQuery) }
+                    onRetry = { viewModel.performSearch(searchQuery) },
+                    onOpenApiSettings = onOpenApiSettings
                 )
             }
         }
@@ -458,37 +530,42 @@ fun TryAnotherPhotoButton(
     val cyclingWord by viewModel.cyclingPhotoWord.collectAsStateWithLifecycle()
     val isCycling = cyclingWord?.equals(word.word, ignoreCase = true) == true
 
-    FilledTonalButton(
+    Surface(
         onClick = { viewModel.cycleNextPhoto(word) },
         enabled = !isCycling,
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        modifier = modifier
-            .heightIn(min = 48.dp)
-            .testTag("try_another_photo_button_${word.word}")
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        tonalElevation = 2.dp,
+        modifier = modifier.testTag("try_another_photo_button_${word.word}")
     ) {
-        if (isCycling) {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .size(16.dp)
-                    .testTag("try_another_photo_spinner"),
-                strokeWidth = 2.dp
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = "Fetching...",
-                style = MaterialTheme.typography.labelMedium
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Default.Refresh,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "Try another photo",
-                style = MaterialTheme.typography.labelMedium
-            )
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            if (isCycling) {
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(13.dp)
+                        .testTag("try_another_photo_spinner"),
+                    strokeWidth = 2.dp
+                )
+                Text(
+                    text = "Fetching...",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = "Try another photo",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
     }
 }
@@ -645,7 +722,7 @@ fun WordDetailsCard(
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                         Text(
-                            text = "$selectedAccent pronunciation",
+                            text = "Pronunciation",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
                         )
@@ -689,6 +766,59 @@ fun WordDetailsCard(
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+
+                val arabicEnabled by viewModel.arabicTranslationEnabled.collectAsStateWithLifecycle()
+                if (arabicEnabled) {
+                    val translations by viewModel.wordArabicTranslations.collectAsStateWithLifecycle()
+                    val translatingWord by viewModel.translatingArabicWord.collectAsStateWithLifecycle()
+                    val wordKey = wordEntity.word.trim().lowercase()
+                    val arabicText = translations[wordKey]
+                    val isTranslating = translatingWord == wordKey
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    if (!arabicText.isNullOrBlank()) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ) {
+                            Text(
+                                text = arabicText,
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp)
+                                    .testTag("arabic_translation_text")
+                            )
+                        }
+                    } else {
+                        FilledTonalButton(
+                            onClick = { viewModel.translateWordToArabic(wordEntity) },
+                            enabled = !isTranslating,
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("show_arabic_meaning_button")
+                        ) {
+                            if (isTranslating) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Translating...")
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Translate,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Show Arabic meaning")
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1015,7 +1145,8 @@ fun WordDetailsCard(
 @Composable
 fun ErrorStateCard(
     message: String,
-    onRetry: () -> Unit
+    onRetry: () -> Unit,
+    onOpenApiSettings: (() -> Unit)? = null
 ) {
     val isOffline = remember(message) {
         val lower = message.lowercase()
@@ -1057,61 +1188,42 @@ fun ErrorStateCard(
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Button(
-                onClick = onRetry,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError
-                ),
-                modifier = Modifier.heightIn(min = 48.dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Try again")
-            }
-        }
-    }
-}
-
-@Composable
-fun SecurityWarningCard() {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("security_warning_card"),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Icon(
-                imageVector = Icons.Default.Lock,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(top = 2.dp)
-                    .size(18.dp)
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = "Security notice",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "Debug builds may include local API keys from .env. Do not distribute APKs containing real API keys.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Button(
+                    onClick = onRetry,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Try again")
+                }
+                if (onOpenApiSettings != null && !isOffline) {
+                    OutlinedButton(
+                        onClick = onOpenApiSettings,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("error_open_api_settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Key,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("API settings")
+                    }
+                }
             }
         }
     }

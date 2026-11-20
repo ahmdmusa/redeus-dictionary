@@ -55,13 +55,13 @@ import com.example.ui.theme.getDynamicColorScheme
 @Composable
 fun SettingsScreen(
     viewModel: DictionaryViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    initialTab: Int = 0
 ) {
     BackHandler(onBack = onNavigateBack)
 
     val autoPronounce by viewModel.autoPronounceEnabled.collectAsStateWithLifecycle()
     val pronunciationSource by viewModel.pronunciationSource.collectAsStateWithLifecycle()
-    val selectedAccent by viewModel.selectedAccent.collectAsStateWithLifecycle()
     val speechSpeed by viewModel.speechSpeed.collectAsStateWithLifecycle()
     val geminiApiKeys by viewModel.geminiApiKeys.collectAsStateWithLifecycle()
     val activeKeyIndex by viewModel.activeKeyIndex.collectAsStateWithLifecycle()
@@ -73,12 +73,22 @@ fun SettingsScreen(
     val geminiMeaningCustomModel by viewModel.geminiMeaningCustomModel.collectAsStateWithLifecycle()
     val openRouterApiKey by viewModel.openRouterApiKey.collectAsStateWithLifecycle()
     val pexelsApiKey by viewModel.pexelsApiKey.collectAsStateWithLifecycle()
+    val useSeparateTtsKeys by viewModel.useSeparateTtsKeys.collectAsStateWithLifecycle()
+    val isTestingGeminiKey by viewModel.isTestingGeminiKey.collectAsStateWithLifecycle()
+    val geminiKeyTestStatus by viewModel.geminiKeyTestStatus.collectAsStateWithLifecycle()
+    val ttsCooldownSeconds by viewModel.ttsCooldownSeconds.collectAsStateWithLifecycle()
+    val wordApiCooldownSeconds by viewModel.wordApiCooldownSeconds.collectAsStateWithLifecycle()
 
     val aiVisualizationsEnabled by viewModel.aiVisualizationsEnabled.collectAsStateWithLifecycle()
     val remindersEnabled by viewModel.remindersEnabled.collectAsStateWithLifecycle()
     val alwaysNotifyEnabled by viewModel.alwaysNotifyEnabled.collectAsStateWithLifecycle()
+    val reminderHour by viewModel.reminderHour.collectAsStateWithLifecycle()
+    val reminderMinute by viewModel.reminderMinute.collectAsStateWithLifecycle()
     val selectedThemeColor by viewModel.selectedThemeColor.collectAsStateWithLifecycle()
-    val imageSourcePreference by viewModel.imageSourcePreference.collectAsStateWithLifecycle()
+    val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
+    val arabicTranslationEnabled by viewModel.arabicTranslationEnabled.collectAsStateWithLifecycle()
+    val isBackupBusy by viewModel.isBackupBusy.collectAsStateWithLifecycle()
     val pexelsQuerySource by viewModel.pexelsQuerySource.collectAsStateWithLifecycle()
 
     val easyBonus by viewModel.easyBonus.collectAsStateWithLifecycle()
@@ -113,12 +123,17 @@ fun SettingsScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val widthSizeClass = LocalWindowWidthSizeClass.current
     val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded
-    val darkTheme = isSystemInDarkTheme()
+    val darkTheme = when (themeMode) {
+        "light" -> false
+        "dark" -> true
+        else -> isSystemInDarkTheme()
+    }
 
     var permissionState by remember { mutableStateOf("default") }
-    var settingsTab by rememberSaveable { mutableStateOf(0) } // 0: Stats, 1: Preferences, 2: SRS Settings
+    var settingsTab by rememberSaveable(initialTab) { mutableStateOf(initialTab) } // 0: Stats, 1: Preferences, 2: API keys, 3: SRS Settings
     var showAdvancedSrsSliders by rememberSaveable { mutableStateOf(false) }
     var showResetConfirmDialog by rememberSaveable { mutableStateOf(false) }
+    var showReminderTimePicker by rememberSaveable { mutableStateOf(false) }
 
     fun updatePermissionState() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -162,6 +177,59 @@ fun SettingsScreen(
         viewModel.setRemindersEnabled(isGranted)
     }
 
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) viewModel.exportBackupJson(uri)
+    }
+
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.importBackupJson(uri)
+    }
+
+    val exportCsvLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) viewModel.exportAnkiCsv(uri)
+    }
+
+    if (showReminderTimePicker) {
+        val timePickerState = rememberTimePickerState(
+            initialHour = reminderHour,
+            initialMinute = reminderMinute
+        )
+        AlertDialog(
+            onDismissRequest = { showReminderTimePicker = false },
+            title = { Text("Daily reminder time") },
+            text = {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    TimePicker(state = timePickerState)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.setReminderTime(timePickerState.hour, timePickerState.minute)
+                        showReminderTimePicker = false
+                    },
+                    modifier = Modifier.testTag("confirm_reminder_time_button")
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showReminderTimePicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     if (showResetConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showResetConfirmDialog = false },
@@ -200,6 +268,7 @@ fun SettingsScreen(
     val tabs = listOf(
         Triple("Stats", Icons.Default.Analytics, "settings_tab_stats"),
         Triple("Preferences", Icons.Default.Tune, "settings_tab_prefs"),
+        Triple("API keys", Icons.Default.Key, "settings_tab_api"),
         Triple("SRS settings", Icons.Default.Psychology, "settings_tab_srs")
     )
 
@@ -589,30 +658,6 @@ fun SettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("Pronunciation accent", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                                    Text("Voice and phonetic spelling", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf("US", "UK").forEach { value ->
-                                        val isSelected = selectedAccent == value
-                                        FilterChip(
-                                            selected = isSelected,
-                                            onClick = { viewModel.setSelectedAccent(value) },
-                                            label = { Text(value) },
-                                            modifier = Modifier.testTag("accent_chip_$value")
-                                        )
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
                                     Text("Speech speed", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                                     Text("Playback rate", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -630,90 +675,339 @@ fun SettingsScreen(
                             }
                         }
 
-                        // GEMINI TTS API KEYS
-                        SettingsSectionCard(title = "Gemini TTS API keys") {
+                        // APPEARANCE
+                        SettingsSectionCard(title = "Appearance") {
                             Text(
-                                text = "Store Gemini API keys for online pronunciation. If the active key hits rate limits (HTTP 429), remaining keys are tried automatically.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = "Theme mode",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
-                            ApiKeyDirectLinkBanner(
-                                title = "Get Gemini API key (Free)",
-                                subtitle = "aistudio.google.com/app/apikey",
-                                url = "https://aistudio.google.com/app/apikey",
-                                testTag = "gemini_tts_direct_link_banner"
-                            )
-                            Text(
-                                text = if (geminiApiKeys.isEmpty()) "No keys added (device TTS fallback)" else "Active: Key ${activeKeyIndex + 1}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (geminiApiKeys.isNotEmpty()) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState()),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    geminiApiKeys.forEachIndexed { idx, _ ->
-                                        FilterChip(
-                                            selected = activeKeyIndex == idx,
-                                            onClick = { viewModel.setActiveKeyIndex(idx) },
-                                            label = { Text(if (activeKeyIndex == idx) "Active: Key ${idx + 1}" else "Key ${idx + 1}") },
-                                            modifier = Modifier.testTag("active_key_${idx + 1}_chip")
-                                        )
-                                    }
-                                }
-                            }
-                            Text(
-                                text = "Last pronunciation source: ${lastPronunciationSource.ifBlank { "Not used yet" }}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.testTag("last_pronunciation_source_keys_row")
-                            )
-                            if (geminiApiKeys.isEmpty()) {
-                                TextButton(
-                                    onClick = { openExternalUrl(uriHandler, context, "https://aistudio.google.com/app/apikey") },
-                                    modifier = Modifier.testTag("gemini_tts_empty_get_key_link")
-                                ) {
-                                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Get your free Gemini API key")
-                                }
-                            } else {
-                                geminiApiKeys.forEachIndexed { index, apiKey ->
-                                    GeminiKeyRowItem(
-                                        index = index,
-                                        apiKey = apiKey,
-                                        isActive = activeKeyIndex == index,
-                                        onKeyChange = { viewModel.updateGeminiApiKey(index, it) },
-                                        onSelectActive = { viewModel.setActiveKeyIndex(index) },
-                                        onDelete = { viewModel.removeGeminiApiKey(index) },
-                                        directLinkUrl = "https://aistudio.google.com/app/apikey",
-                                        directLinkLabel = "Get key from Google AI Studio"
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("System" to "system", "Light" to "light", "Dark" to "dark").forEach { (label, value) ->
+                                    val isSelected = themeMode == value
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.setThemeMode(value) },
+                                        label = { Text(label) },
+                                        leadingIcon = if (isSelected) {
+                                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                        } else null,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("theme_mode_chip_$value")
                                     )
                                 }
                             }
-                            FilledTonalButton(
-                                onClick = { viewModel.addGeminiApiKey("") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .testTag("add_gemini_key_button")
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                SettingsToggleRow(
+                                    title = "Material You dynamic color",
+                                    subtitle = "Match app colors to your wallpaper when Default palette is selected",
+                                    checked = dynamicColorEnabled,
+                                    onCheckedChange = { viewModel.setDynamicColorEnabled(it) },
+                                    switchTag = "dynamic_color_switch"
+                                )
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            Text(
+                                text = "Color palette",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Choose a preset color palette for the app.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            val presets = listOf("yellow", "blue", "green", "orange", "pink", "teal")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Gemini key")
+                                presets.forEach { name ->
+                                    val presetScheme = getDynamicColorScheme(name, darkTheme)
+                                    val isSelected = selectedThemeColor.equals(name, ignoreCase = true)
+                                    Surface(
+                                        onClick = { viewModel.setSelectedThemeColor(name) },
+                                        shape = CircleShape,
+                                        color = presetScheme.primary,
+                                        contentColor = presetScheme.onPrimary,
+                                        border = if (isSelected) BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface) else null,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .semantics { contentDescription = "Theme palette $name" }
+                                            .testTag("color_theme_$name")
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (isSelected) {
+                                                Icon(Icons.Default.Check, contentDescription = "Selected", modifier = Modifier.size(22.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            SettingsToggleRow(
+                                title = "Show word photos",
+                                subtitle = "Show real photos on word cards",
+                                checked = aiVisualizationsEnabled,
+                                onCheckedChange = { viewModel.setAiVisualizationsEnabled(it) },
+                                switchTag = "ai_visualizations_switch"
+                            )
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            SettingsToggleRow(
+                                title = "Arabic translation button",
+                                subtitle = "Show an optional Arabic meaning button on word cards",
+                                checked = arabicTranslationEnabled,
+                                onCheckedChange = { viewModel.setArabicTranslationEnabled(it) },
+                                switchTag = "arabic_translation_switch"
+                            )
+                        }
+
+                        // REAL PHOTO SEARCH SOURCE
+                        SettingsSectionCard(
+                            title = "Real photo search source",
+                            modifier = Modifier.testTag("pexels_query_source_card")
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("Word" to "word", "Definition" to "definition", "AI desc" to "image_prompt").forEach { (label, value) ->
+                                    val isSelected = pexelsQuerySource == value
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.setPexelsQuerySource(value) },
+                                        label = { Text(label) },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("pexels_query_source_chip_$value")
+                                    )
+                                }
                             }
                         }
 
-                        // GEMINI MEANING & READING API KEYS
+                        // STUDY REMINDERS
+                        SettingsSectionCard(title = "Study reminders") {
+                            val toggleReminders: (Boolean) -> Unit = { nextState ->
+                                if (nextState) {
+                                    if (permissionState == "granted" || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                                        viewModel.setRemindersEnabled(true)
+                                    } else {
+                                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                } else {
+                                    viewModel.setRemindersEnabled(false)
+                                }
+                            }
+                            SettingsToggleRow(
+                                title = "Daily reminder notifications",
+                                subtitle = "Receive alerts when vocabulary cards are due",
+                                checked = remindersEnabled && permissionState == "granted",
+                                onCheckedChange = toggleReminders,
+                                switchTag = "study_reminders_switch"
+                            )
+
+                            if (remindersEnabled) {
+                                when (permissionState) {
+                                    "granted" -> {
+                                        Surface(
+                                            shape = MaterialTheme.shapes.small,
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(12.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                Text("Daily study reminders are active", style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                        SettingsToggleRow(
+                                            title = "Always notify daily",
+                                            subtitle = "Send a reminder even if no cards are due",
+                                            checked = alwaysNotifyEnabled,
+                                            onCheckedChange = { viewModel.setAlwaysNotifyEnabled(it) },
+                                            switchTag = "always_notify_switch"
+                                        )
+                                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                                        val formattedTime = remember(reminderHour, reminderMinute) {
+                                            val h12 = when {
+                                                reminderHour == 0 -> 12
+                                                reminderHour > 12 -> reminderHour - 12
+                                                else -> reminderHour
+                                            }
+                                            val amPm = if (reminderHour < 12) "AM" else "PM"
+                                            String.format(java.util.Locale.US, "%d:%02d %s", h12, reminderMinute, amPm)
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Reminder time",
+                                                    style = MaterialTheme.typography.titleSmall,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = "Daily at $formattedTime",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.testTag("reminder_time_text")
+                                                )
+                                            }
+                                            FilledTonalButton(
+                                                onClick = { showReminderTimePicker = true },
+                                                modifier = Modifier
+                                                    .heightIn(min = 48.dp)
+                                                    .testTag("change_reminder_time_button")
+                                            ) {
+                                                Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text("Change")
+                                            }
+                                        }
+                                    }
+                                    "denied" -> {
+                                        Surface(
+                                            shape = MaterialTheme.shapes.medium,
+                                            color = MaterialTheme.colorScheme.errorContainer,
+                                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(14.dp),
+                                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Text("Notifications are blocked", style = MaterialTheme.typography.titleSmall)
+                                                Text(
+                                                    "Enable notifications in Android Settings > Apps > Redeus Dictionary.",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                                Button(
+                                                    onClick = {
+                                                        try {
+                                                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                                                data = Uri.fromParts("package", context.packageName, null)
+                                                            }
+                                                            context.startActivity(intent)
+                                                        } catch (e: Exception) {
+                                                            Log.e("SettingsScreen", "Failed to open settings", e)
+                                                        }
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = MaterialTheme.colorScheme.error,
+                                                        contentColor = MaterialTheme.colorScheme.onError
+                                                    ),
+                                                    modifier = Modifier
+                                                        .heightIn(min = 48.dp)
+                                                        .testTag("open_settings_btn")
+                                                ) {
+                                                    Text("Open system settings")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    else -> {
+                                        Button(
+                                            onClick = {
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .heightIn(min = 48.dp)
+                                                .testTag("enable_notifications_btn")
+                                        ) {
+                                            Text("Enable notifications")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // BACKUP & EXPORT
                         SettingsSectionCard(
-                            title = "Gemini API keys (Meaning & Reading)",
+                            title = "Backup & export",
+                            modifier = Modifier.testTag("backup_export_card")
+                        ) {
+                            Text(
+                                text = "Back up your saved words, mined sentences, reading history, and SRS progress, or export your deck to Anki.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilledTonalButton(
+                                    onClick = { exportBackupLauncher.launch("redeus_backup.json") },
+                                    enabled = !isBackupBusy,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("export_backup_json_button")
+                                ) {
+                                    Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Export JSON")
+                                }
+                                OutlinedButton(
+                                    onClick = { importBackupLauncher.launch(arrayOf("application/json", "text/plain")) },
+                                    enabled = !isBackupBusy,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("import_backup_json_button")
+                                ) {
+                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Restore JSON")
+                                }
+                            }
+                            OutlinedButton(
+                                onClick = { exportCsvLauncher.launch("redeus_anki_deck.csv") },
+                                enabled = !isBackupBusy,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("export_anki_csv_button")
+                            ) {
+                                Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Export deck to Anki (CSV)")
+                            }
+                        }
+                    }
+
+                    2 -> {
+                        // UNIFIED GEMINI API KEYS (PRIMARY)
+                        SettingsSectionCard(
+                            title = if (useSeparateTtsKeys) "Gemini API keys (Meaning & Reading)" else "Gemini API keys",
                             modifier = Modifier.testTag("gemini_meaning_keys_card")
                         ) {
                             Text(
-                                text = "Store Gemini API keys for word definitions, examples, and Daily Reading generation.",
+                                text = if (useSeparateTtsKeys) {
+                                    "Store Gemini API keys for word definitions, examples, and Daily Reading generation."
+                                } else {
+                                    "One Gemini API key powers word definitions, Daily Reading, and AI pronunciation. Multiple keys automatically fail over on rate limits."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -765,16 +1059,54 @@ fun SettingsScreen(
                                     )
                                 }
                             }
-                            FilledTonalButton(
-                                onClick = { viewModel.addGeminiMeaningApiKey("") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .testTag("add_gemini_meaning_key_button")
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Add Gemini key")
+                                FilledTonalButton(
+                                    onClick = { viewModel.addGeminiMeaningApiKey("") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .heightIn(min = 48.dp)
+                                        .testTag("add_gemini_meaning_key_button")
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Add Gemini key")
+                                }
+                                OutlinedButton(
+                                    onClick = { viewModel.testActiveGeminiKey() },
+                                    enabled = !isTestingGeminiKey && geminiMeaningApiKeys.any { it.trim().isNotBlank() },
+                                    modifier = Modifier
+                                        .heightIn(min = 48.dp)
+                                        .testTag("test_gemini_key_button")
+                                ) {
+                                    if (isTestingGeminiKey) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(if (isTestingGeminiKey) "Testing..." else "Test key")
+                                }
+                            }
+                            val testStatus = geminiKeyTestStatus
+                            if (testStatus != null) {
+                                val (ok, statusMsg) = testStatus
+                                Surface(
+                                    shape = MaterialTheme.shapes.small,
+                                    color = if (ok) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = if (ok) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = statusMsg,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                            .testTag("gemini_key_test_status")
+                                    )
+                                }
                             }
                             if (geminiMeaningApiKeys.none { it.trim().isNotBlank() }) {
                                 Surface(
@@ -855,12 +1187,201 @@ fun SettingsScreen(
                                     value = geminiMeaningCustomModel,
                                     onValueChange = { viewModel.setGeminiMeaningCustomModel(it) },
                                     label = { Text("Custom model ID") },
-                                    placeholder = { Text("e.g. gemini-2.5-flash") },
+                                    placeholder = { Text("e.g. gemini-3.5-flash-lite") },
                                     singleLine = true,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .testTag("custom_gemini_model_input")
                                 )
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            SettingsToggleRow(
+                                title = "Use separate keys for TTS pronunciation",
+                                subtitle = "Optional — keep separate quota for online AI voice",
+                                checked = useSeparateTtsKeys,
+                                onCheckedChange = { viewModel.setUseSeparateTtsKeys(it) },
+                                switchTag = "use_separate_tts_keys_switch"
+                            )
+                        }
+
+                        if (useSeparateTtsKeys) {
+                            // GEMINI TTS API KEYS (OPTIONAL SEPARATE QUOTA)
+                            SettingsSectionCard(title = "Gemini TTS API keys") {
+                                Text(
+                                    text = "Store dedicated Gemini API keys for online pronunciation. If the active key hits rate limits (HTTP 429), remaining keys are tried automatically.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                ApiKeyDirectLinkBanner(
+                                    title = "Get Gemini API key (Free)",
+                                    subtitle = "aistudio.google.com/app/apikey",
+                                    url = "https://aistudio.google.com/app/apikey",
+                                    testTag = "gemini_tts_direct_link_banner"
+                                )
+                                Text(
+                                    text = if (geminiApiKeys.isEmpty()) "No keys added (device TTS fallback)" else "Active: Key ${activeKeyIndex + 1}",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (geminiApiKeys.isNotEmpty()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        geminiApiKeys.forEachIndexed { idx, _ ->
+                                            FilterChip(
+                                                selected = activeKeyIndex == idx,
+                                                onClick = { viewModel.setActiveKeyIndex(idx) },
+                                                label = { Text(if (activeKeyIndex == idx) "Active: Key ${idx + 1}" else "Key ${idx + 1}") },
+                                                modifier = Modifier.testTag("active_key_${idx + 1}_chip")
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = "Last pronunciation source: ${lastPronunciationSource.ifBlank { "Not used yet" }}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.testTag("last_pronunciation_source_keys_row")
+                                )
+                                if (geminiApiKeys.isEmpty()) {
+                                    TextButton(
+                                        onClick = { openExternalUrl(uriHandler, context, "https://aistudio.google.com/app/apikey") },
+                                        modifier = Modifier.testTag("gemini_tts_empty_get_key_link")
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Get your free Gemini API key")
+                                    }
+                                } else {
+                                    geminiApiKeys.forEachIndexed { index, apiKey ->
+                                        GeminiKeyRowItem(
+                                            index = index,
+                                            apiKey = apiKey,
+                                            isActive = activeKeyIndex == index,
+                                            onKeyChange = { viewModel.updateGeminiApiKey(index, it) },
+                                            onSelectActive = { viewModel.setActiveKeyIndex(index) },
+                                            onDelete = { viewModel.removeGeminiApiKey(index) },
+                                            directLinkUrl = "https://aistudio.google.com/app/apikey",
+                                            directLinkLabel = "Get key from Google AI Studio"
+                                        )
+                                    }
+                                }
+                                FilledTonalButton(
+                                    onClick = { viewModel.addGeminiApiKey("") },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("add_gemini_key_button")
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Add Gemini key")
+                                }
+                            }
+                        }
+
+                        // REQUEST COOLDOWN (RATE-LIMIT PROTECTION)
+                        SettingsSectionCard(
+                            title = "Request cooldown",
+                            modifier = Modifier.testTag("api_cooldown_card")
+                        ) {
+                            Text(
+                                text = "Minimum wait time between consecutive network API requests to avoid rate limits (HTTP 429). Cached words and audio play instantly.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Word & AI API cooldown
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Word & AI API cooldown",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (wordApiCooldownSeconds == 0) "Off" else "${wordApiCooldownSeconds}s",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.testTag("word_api_cooldown_value")
+                                )
+                            }
+                            Slider(
+                                value = wordApiCooldownSeconds.coerceIn(0, 60).toFloat(),
+                                onValueChange = { viewModel.setWordApiCooldownSeconds(it.toInt()) },
+                                valueRange = 0f..60f,
+                                steps = 11,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("word_api_cooldown_slider")
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(0, 5, 15, 30, 60).forEach { sec ->
+                                    FilterChip(
+                                        selected = wordApiCooldownSeconds == sec,
+                                        onClick = { viewModel.setWordApiCooldownSeconds(sec) },
+                                        label = { Text(if (sec == 0) "Off" else "${sec}s") },
+                                        modifier = Modifier.testTag("word_api_cooldown_chip_$sec")
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            // TTS pronunciation cooldown
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "TTS pronunciation cooldown",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = if (ttsCooldownSeconds == 0) "Off" else "${ttsCooldownSeconds}s",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.testTag("tts_cooldown_value")
+                                )
+                            }
+                            Slider(
+                                value = ttsCooldownSeconds.coerceIn(0, 60).toFloat(),
+                                onValueChange = { viewModel.setTtsCooldownSeconds(it.toInt()) },
+                                valueRange = 0f..60f,
+                                steps = 11,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("tts_cooldown_slider")
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(0, 5, 15, 30, 60).forEach { sec ->
+                                    FilterChip(
+                                        selected = ttsCooldownSeconds == sec,
+                                        onClick = { viewModel.setTtsCooldownSeconds(sec) },
+                                        label = { Text(if (sec == 0) "Off" else "${sec}s") },
+                                        modifier = Modifier.testTag("tts_cooldown_chip_$sec")
+                                    )
+                                }
                             }
                         }
 
@@ -880,7 +1401,7 @@ fun SettingsScreen(
 
                         SingleApiKeyCard(
                             heading = "Pexels API key",
-                            description = "Used when Word Image Source is set to Real Photo.",
+                            description = "Used to fetch real photos for words.",
                             currentKey = pexelsApiKey,
                             placeholder = "Enter Pexels API key",
                             testTagPrefix = "pexels_key",
@@ -890,212 +1411,9 @@ fun SettingsScreen(
                             onSaveKey = { viewModel.setPexelsApiKey(it) },
                             onClearKey = { viewModel.setPexelsApiKey("") }
                         )
-
-                        // APPEARANCE
-                        SettingsSectionCard(title = "Appearance") {
-                            Text(
-                                text = "Color palette",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Uses Material You dynamic color on Android 12+ when Default is selected, or choose a preset palette.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            val presets = listOf("yellow", "blue", "green", "orange", "pink", "teal")
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                presets.forEach { name ->
-                                    val presetScheme = getDynamicColorScheme(name, darkTheme)
-                                    val isSelected = selectedThemeColor.equals(name, ignoreCase = true)
-                                    Surface(
-                                        onClick = { viewModel.setSelectedThemeColor(name) },
-                                        shape = CircleShape,
-                                        color = presetScheme.primary,
-                                        contentColor = presetScheme.onPrimary,
-                                        border = if (isSelected) BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface) else null,
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .semantics { contentDescription = "Theme palette $name" }
-                                            .testTag("color_theme_$name")
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            if (isSelected) {
-                                                Icon(Icons.Default.Check, contentDescription = "Selected", modifier = Modifier.size(22.dp))
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-                            SettingsToggleRow(
-                                title = "AI visualizations",
-                                subtitle = "Show generated mnemonic illustrations for words",
-                                checked = aiVisualizationsEnabled,
-                                onCheckedChange = { viewModel.setAiVisualizationsEnabled(it) },
-                                switchTag = "ai_visualizations_switch"
-                            )
-                        }
-
-                        // WORD IMAGE SOURCE
-                        SettingsSectionCard(title = "Word image source") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                listOf("AI generated" to "ai", "Real photo" to "web").forEach { (label, value) ->
-                                    val isSelected = imageSourcePreference == value
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { viewModel.setImageSourcePreference(value) },
-                                        label = { Text(label) },
-                                        leadingIcon = if (isSelected) {
-                                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                        } else null,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .testTag("image_source_chip_$value")
-                                    )
-                                }
-                            }
-                        }
-
-                        // REAL PHOTO SEARCH SOURCE
-                        SettingsSectionCard(
-                            title = "Real photo search source",
-                            modifier = Modifier.testTag("pexels_query_source_card")
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                listOf("Word" to "word", "Definition" to "definition", "AI desc" to "image_prompt").forEach { (label, value) ->
-                                    val isSelected = pexelsQuerySource == value
-                                    FilterChip(
-                                        selected = isSelected,
-                                        onClick = { viewModel.setPexelsQuerySource(value) },
-                                        label = { Text(label) },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .testTag("pexels_query_source_chip_$value")
-                                    )
-                                }
-                            }
-                        }
-
-                        // STUDY REMINDERS
-                        SettingsSectionCard(title = "Study reminders") {
-                            val toggleReminders: (Boolean) -> Unit = { nextState ->
-                                if (nextState) {
-                                    if (permissionState == "granted" || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-                                        viewModel.setRemindersEnabled(true)
-                                    } else {
-                                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    }
-                                } else {
-                                    viewModel.setRemindersEnabled(false)
-                                }
-                            }
-                            SettingsToggleRow(
-                                title = "Daily reminder notifications",
-                                subtitle = "Receive alerts when vocabulary cards are due",
-                                checked = remindersEnabled && permissionState == "granted",
-                                onCheckedChange = toggleReminders,
-                                switchTag = "study_reminders_switch"
-                            )
-
-                            if (remindersEnabled) {
-                                when (permissionState) {
-                                    "granted" -> {
-                                        Surface(
-                                            shape = MaterialTheme.shapes.small,
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(12.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                Text("Daily study reminders are active", style = MaterialTheme.typography.bodyMedium)
-                                            }
-                                        }
-                                        SettingsToggleRow(
-                                            title = "Always notify daily",
-                                            subtitle = "Send a reminder even if no cards are due",
-                                            checked = alwaysNotifyEnabled,
-                                            onCheckedChange = { viewModel.setAlwaysNotifyEnabled(it) },
-                                            switchTag = "always_notify_switch"
-                                        )
-                                    }
-                                    "denied" -> {
-                                        Surface(
-                                            shape = MaterialTheme.shapes.medium,
-                                            color = MaterialTheme.colorScheme.errorContainer,
-                                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Column(
-                                                modifier = Modifier.padding(14.dp),
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Text("Notifications are blocked", style = MaterialTheme.typography.titleSmall)
-                                                Text(
-                                                    "Enable notifications in Android Settings > Apps > Redeus Dictionary.",
-                                                    style = MaterialTheme.typography.bodySmall
-                                                )
-                                                Button(
-                                                    onClick = {
-                                                        try {
-                                                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                                                data = Uri.fromParts("package", context.packageName, null)
-                                                            }
-                                                            context.startActivity(intent)
-                                                        } catch (e: Exception) {
-                                                            Log.e("SettingsScreen", "Failed to open settings", e)
-                                                        }
-                                                    },
-                                                    colors = ButtonDefaults.buttonColors(
-                                                        containerColor = MaterialTheme.colorScheme.error,
-                                                        contentColor = MaterialTheme.colorScheme.onError
-                                                    ),
-                                                    modifier = Modifier
-                                                        .heightIn(min = 48.dp)
-                                                        .testTag("open_settings_btn")
-                                                ) {
-                                                    Text("Open system settings")
-                                                }
-                                            }
-                                        }
-                                    }
-                                    else -> {
-                                        Button(
-                                            onClick = {
-                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .heightIn(min = 48.dp)
-                                                .testTag("enable_notifications_btn")
-                                        ) {
-                                            Text("Enable notifications")
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
 
-                    2 -> {
+                    3 -> {
                         // DETAILED SRS STATS HEADER
                         Surface(
                             modifier = Modifier
@@ -1356,12 +1674,15 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                PrimaryTabRow(selectedTabIndex = settingsTab) {
+                PrimaryScrollableTabRow(
+                    selectedTabIndex = settingsTab,
+                    edgePadding = 16.dp
+                ) {
                     tabs.forEachIndexed { index, (title, _, tag) ->
                         Tab(
                             selected = settingsTab == index,
                             onClick = { settingsTab = index },
-                            text = { Text(title) },
+                            text = { Text(title, maxLines = 1) },
                             modifier = Modifier.testTag(tag)
                         )
                     }
