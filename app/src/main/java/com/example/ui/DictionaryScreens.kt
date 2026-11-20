@@ -1,4 +1,4 @@
-package com.example.ui
+﻿package com.example.ui
 
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.res.painterResource
@@ -72,918 +72,12 @@ import okhttp3.OkHttpClient
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-@Composable
-fun SearchTabContent(
-    viewModel: DictionaryViewModel,
-    searchQuery: String,
-    uiState: SearchUiState,
-    innerPadding: PaddingValues
-) {
-    val focusManager = LocalFocusManager.current
-    val scrollState = rememberScrollState()
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(innerPadding)
-            .verticalScroll(scrollState)
-            .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // App Core Banner
-        HeroBannerSection()
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Search bar in Neo-Brutalist Box with 2.5dp border and 4dp shadow
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .widthIn(max = 600.dp)
-                .padding(end = 4.dp, bottom = 4.dp)
-                .neoShadow(offsetX = 4.dp, offsetY = 4.dp, shadowColor = NeoBlack, shape = RoundedCornerShape(8.dp))
-                .background(NeoWhite, shape = RoundedCornerShape(8.dp))
-                .border(2.5.dp, NeoBlack, shape = RoundedCornerShape(8.dp))
-        ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { viewModel.onSearchQueryChanged(it) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("search_word_input"),
-                placeholder = {
-                    Text(
-                        "Search any English word (e.g. Resilient)...",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, color = NeoBlack.copy(alpha = 0.5f))
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search Icon",
-                        tint = NeoBlack
-                    )
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(
-                            onClick = { viewModel.clearSearchState() },
-                            modifier = Modifier.testTag("clear_search_button")
-                        ) {
-                            Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear", tint = NeoBlack)
-                        }
-                    }
-                },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Text,
-                    imeAction = ImeAction.Search
-                ),
-                keyboardActions = KeyboardActions(
-                    onSearch = {
-                        viewModel.performSearch(searchQuery)
-                        focusManager.clearFocus()
-                    }
-                ),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = NeoWhite,
-                    unfocusedContainerColor = NeoWhite,
-                    focusedTextColor = NeoBlack,
-                    unfocusedTextColor = NeoBlack,
-                    focusedBorderColor = Color.Transparent,
-                    unfocusedBorderColor = Color.Transparent,
-                    cursorColor = NeoBlack
-                )
-            )
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        NeoButton(
-            onClick = {
-                viewModel.performSearch(searchQuery)
-                focusManager.clearFocus()
-            },
-            modifier = Modifier
-                .widthIn(min = 180.dp)
-                .height(52.dp)
-                .testTag("search_word_button"),
-            containerColor = NeoYellow,
-            contentColor = NeoBlack
-        ) {
-            Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null, tint = NeoBlack)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("AI DEFINE WORD", fontWeight = FontWeight.Black, fontSize = 14.sp, letterSpacing = 0.5.sp)
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        AnimatedContent(
-            targetState = uiState,
-            transitionSpec = {
-                fadeIn(animationSpec = spring()) togetherWith fadeOut(animationSpec = spring())
-            },
-            label = "searchState"
-        ) { state ->
-            when (state) {
-                is SearchUiState.Idle -> {
-                    DiscoverySuggestions { selectedWord ->
-                        viewModel.performSearch(selectedWord)
-                    }
-                }
-                is SearchUiState.Loading -> {
-                    NeoCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .widthIn(max = 600.dp)
-                            .padding(vertical = 16.dp),
-                        backgroundColor = NeoWhite
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            CircularProgressIndicator(
-                                color = NeoBlack,
-                                strokeWidth = 4.dp
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                "ANALYZING WORD WITH GEMINI AI...",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black),
-                                color = NeoBlack,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                    }
-                }
-                is SearchUiState.Success -> {
-                    WordDetailsCard(
-                        wordEntity = state.word,
-                        onSpeak = { viewModel.speak(state.word.word) },
-                        onBookmarkToggle = { viewModel.toggleBookmark(state.word) },
-                        viewModel = viewModel
-                    )
-                }
-                is SearchUiState.Error -> {
-                    ErrorStateCard(
-                        message = state.message,
-                        onRetry = { viewModel.performSearch(searchQuery) }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Security Warnings
-        SecurityWarningCard()
-    }
-}
+import com.example.ui.screens.search.ErrorStateCard
+import com.example.ui.screens.search.TryAnotherPhotoButton
 
 @Composable
-fun HeroBannerSection() {
-    NeoCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .widthIn(max = 600.dp),
-        backgroundColor = NeoYellow
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(NeoWhite, shape = RoundedCornerShape(8.dp))
-                    .border(2.dp, NeoBlack, shape = RoundedCornerShape(8.dp))
-                    .padding(4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    painter = painterResource(id = com.example.R.drawable.ic_launcher_foreground),
-                    contentDescription = null,
-                    tint = NeoBlack,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column {
-                Text(
-                    text = "REDEUS DICTIONARY",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 0.5.sp
-                    ),
-                    color = NeoBlack
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "SMART VOCABULARY DECK POWERED BY AI",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 0.5.sp
-                    ),
-                    color = NeoBlack.copy(alpha = 0.85f)
-                )
-            }
-        }
-    }
-}
+fun HeroBannerSection() = com.example.ui.screens.search.HeroBannerSection()
 
-@Composable
-fun DiscoverySuggestions(onSelectWord: (String) -> Unit) {
-    val list = listOf("serendipity", "ephemeral", "benevolent", "resilient", "pragmatic", "aesthetic")
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .widthIn(max = 600.dp),
-        horizontalAlignment = Alignment.Start
-    ) {
-        NeoSectionBadge(
-            title = "EXPLORE & SEED WORDS",
-            containerColor = NeoYellow,
-            contentColor = NeoBlack,
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
-        
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            mainAxisSpacing = 8.dp,
-            crossAxisSpacing = 8.dp
-        ) {
-            list.forEach { word ->
-                NeoChip(
-                    text = word,
-                    selected = false,
-                    onClick = { onSelectWord(word) },
-                    unselectedColor = NeoWhite,
-                    contentColor = NeoBlack,
-                    modifier = Modifier.testTag("seed_word_${word}")
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun TryAnotherPhotoButton(
-    word: WordEntity,
-    viewModel: DictionaryViewModel,
-    modifier: Modifier = Modifier
-) {
-    val imageSource by viewModel.imageSourcePreference.collectAsStateWithLifecycle()
-    if (imageSource != "web") return
-
-    val cyclingWord by viewModel.cyclingPhotoWord.collectAsStateWithLifecycle()
-    val isCycling = cyclingWord?.equals(word.word, ignoreCase = true) == true
-
-    Box(
-        modifier = modifier
-            .background(NeoYellow, shape = RoundedCornerShape(6.dp))
-            .border(2.dp, NeoBlack, shape = RoundedCornerShape(6.dp))
-            .clip(RoundedCornerShape(6.dp))
-            .clickable(enabled = !isCycling) {
-                viewModel.cycleNextPhoto(word)
-            }
-            .padding(horizontal = 8.dp, vertical = 5.dp)
-            .testTag("try_another_photo_button_${word.word}")
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            if (isCycling) {
-                CircularProgressIndicator(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .testTag("try_another_photo_spinner"),
-                    strokeWidth = 2.dp,
-                    color = NeoBlack
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "FETCHING...",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                    fontSize = 10.sp,
-                    color = NeoBlack
-                )
-            } else {
-                Text(
-                    text = "🔄 Try Another Photo",
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                    fontSize = 10.sp,
-                    color = NeoBlack
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun WordDetailsCard(
-    wordEntity: WordEntity,
-    onSpeak: () -> Unit,
-    onBookmarkToggle: () -> Unit,
-    viewModel: DictionaryViewModel
-) {
-    var showCardInfoDialog by remember { mutableStateOf(false) }
-    val masteryPercentage = if (wordEntity.isBookmarked) 85 else 35
-
-    if (showCardInfoDialog) {
-        WordCardInfoDialog(
-            word = wordEntity,
-            viewModel = viewModel,
-            onDismiss = { showCardInfoDialog = false }
-        )
-    }
-    
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .widthIn(max = 600.dp)
-            .testTag("word_details_card"),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        
-        // --- 1. Word Header Card ---
-        NeoCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = NeoYellow
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = wordEntity.word.uppercase(),
-                            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Black),
-                            color = NeoBlack,
-                            overflow = TextOverflow.Ellipsis,
-                            maxLines = 1
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(NeoBlack, shape = RoundedCornerShape(4.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        ) {
-                            Text(
-                                text = wordEntity.partOfSpeech.uppercase(),
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                color = NeoWhite,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        NeoCardStatusBadge(
-                            repetitions = wordEntity.repetitions,
-                            interval = wordEntity.interval,
-                            distinctReviewDays = wordEntity.distinctReviewDays
-                        )
-                        if (wordEntity.isLeech) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            com.example.ui.theme.NeoLeechBadge(lapses = wordEntity.lapses)
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.clickable { onSpeak() }
-                    ) {
-                        NeoIconButton(
-                            onClick = onSpeak,
-                            containerColor = NeoWhite,
-                            contentColor = NeoBlack,
-                            modifier = Modifier
-                                .size(36.dp)
-                                .testTag("speak_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.VolumeUp,
-                                contentDescription = "Pronounce Word",
-                                tint = NeoBlack,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        val selectedAccent by viewModel.selectedAccent.collectAsStateWithLifecycle()
-                        val displayPhonetic = getPhoneticForAccent(wordEntity.phonetic, selectedAccent)
-                        Text(
-                            text = displayPhonetic,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = NeoBlack,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "($selectedAccent)",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                            color = NeoBlack.copy(alpha = 0.7f)
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    NeoWordTagsRow(word = wordEntity, viewModel = viewModel)
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    NeoIconButton(
-                        onClick = { showCardInfoDialog = true },
-                        containerColor = NeoWhite,
-                        contentColor = NeoBlack,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("word_card_info_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = "Card Review History",
-                            tint = NeoBlack,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    NeoIconButton(
-                        onClick = onBookmarkToggle,
-                        containerColor = NeoWhite,
-                        contentColor = if (wordEntity.isBookmarked) NeoRed else NeoBlack,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .testTag("bookmark_toggle")
-                    ) {
-                        Icon(
-                            imageVector = if (wordEntity.isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                            contentDescription = "Bookmark Toggle",
-                            tint = if (wordEntity.isBookmarked) NeoRed else NeoBlack,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // --- Grid Split (Nested Row with two columns) to form the clean Bento Box Grid ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // LEFT COLUMN: AI Visualization + Usage example
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // BOX 2: AI Visualization Card
-                if (wordEntity.imagePrompt.isNotEmpty()) {
-                    val imageLoader = rememberAppImageLoader(LocalContext.current)
-                    NeoCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp),
-                        backgroundColor = NeoNearBlack
-                    ) {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            val imageUrl = getAIImageUrl(wordEntity.word, wordEntity.imagePrompt)
-                            SubcomposeAsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current)
-                                    .data(imageUrl)
-                                    .crossfade(true)
-                                    .build(),
-                                imageLoader = imageLoader,
-                                contentDescription = "AI Concept representation of ${wordEntity.word}",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                                loading = {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(NeoNearBlack),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center
-                                        ) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(32.dp),
-                                                strokeWidth = 3.dp,
-                                                color = NeoYellow
-                                            )
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text(
-                                                text = "LOADING ILLUSTRATION...",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                                color = NeoYellow
-                                            )
-                                        }
-                                    }
-                                },
-                                error = {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(NeoNearBlack),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center,
-                                            modifier = Modifier.padding(16.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.ImageNotSupported,
-                                                contentDescription = "Image unavailable",
-                                                tint = NeoWhite.copy(alpha = 0.6f),
-                                                modifier = Modifier.size(36.dp)
-                                            )
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            Text(
-                                                text = "IMAGE UNAVAILABLE",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = NeoWhite.copy(alpha = 0.8f),
-                                                textAlign = TextAlign.Center
-                                            )
-                                        }
-                                    }
-                                },
-                                success = {
-                                    SubcomposeAsyncImageContent(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                }
-                            )
-                            
-                            // Vignette overlay
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
-                                            startY = 100f
-                                        )
-                                    )
-                            )
-                            
-                            // Try Another Photo button (NeoBrutalist style)
-                            TryAnotherPhotoButton(
-                                word = wordEntity,
-                                viewModel = viewModel,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                            )
-
-                            // Overlay Content
-                            Column(
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(12.dp)
-                            ) {
-                                val isWebPhoto = wordEntity.imagePrompt.startsWith("http")
-                                Box(
-                                    modifier = Modifier
-                                        .background(NeoYellow, shape = RoundedCornerShape(4.dp))
-                                        .border(1.5.dp, NeoBlack, shape = RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = if (isWebPhoto) "REAL PHOTO (PEXELS)" else "AI VISUALIZATION",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                        color = NeoBlack,
-                                        fontSize = 9.sp
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(4.dp))
-                                val captionText = if (isWebPhoto) {
-                                    val derived = viewModel.getDerivedQuery(wordEntity.word)
-                                    if (!derived.isNullOrBlank()) "Photo matching \"$derived\"" else "Photo from Pexels for ${wordEntity.word}"
-                                } else {
-                                    "\"${wordEntity.imagePrompt}\""
-                                }
-                                Text(
-                                    text = captionText,
-                                    style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
-                                    color = Color.White,
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis,
-                                    lineHeight = 13.sp
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // BOX 3: Usage Example Card
-                NeoCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = NeoCream
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "\u201c",
-                            fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Black,
-                            color = NeoBlack,
-                            lineHeight = 24.sp
-                        )
-                        Text(
-                            text = wordEntity.example,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic, fontWeight = FontWeight.Medium),
-                            color = NeoBlack,
-                            lineHeight = 18.sp
-                        )
-                        if (wordEntity.example.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(12.dp))
-                            ExampleSentenceMiningActionsRow(
-                                wordEntity = wordEntity,
-                                viewModel = viewModel
-                            )
-                        }
-                    }
-                }
-            }
-
-            // RIGHT COLUMN: Definition + Synonyms & Antonyms + Mnemonic
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // BOX 4: Definition Card
-                NeoCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    backgroundColor = NeoWhite
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Book,
-                                contentDescription = null,
-                                tint = NeoBlack,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "DEFINITION",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                color = NeoBlack,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = wordEntity.definition,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = NeoBlack,
-                            lineHeight = 18.sp
-                        )
-                    }
-                }
-
-                // BOX 5: Synonyms & Antonyms Card
-                if (wordEntity.synonyms.isNotEmpty() || wordEntity.antonyms.isNotEmpty()) {
-                    NeoCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = NeoWhite
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            if (wordEntity.synonyms.isNotEmpty()) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Translate,
-                                        contentDescription = null,
-                                        tint = NeoBlack,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = "SYNONYMS",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                        color = NeoBlack,
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                FlowRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    mainAxisSpacing = 6.dp,
-                                    crossAxisSpacing = 6.dp
-                                ) {
-                                    wordEntity.synonyms.split(",").forEach { syn ->
-                                        val cleanSyn = syn.trim()
-                                        if (cleanSyn.isNotEmpty()) {
-                                            NeoChip(
-                                                text = cleanSyn,
-                                                selected = true,
-                                                selectedColor = NeoYellowLight,
-                                                contentColor = NeoBlack
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            if (wordEntity.synonyms.isNotEmpty() && wordEntity.antonyms.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(12.dp))
-                            }
-
-                            if (wordEntity.antonyms.isNotEmpty()) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Compare,
-                                        contentDescription = null,
-                                        tint = NeoRed,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Text(
-                                        text = "ANTONYMS",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                        color = NeoRed,
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                FlowRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    mainAxisSpacing = 6.dp,
-                                    crossAxisSpacing = 6.dp
-                                ) {
-                                    wordEntity.antonyms.split(",").forEach { ant ->
-                                        val cleanAnt = ant.trim()
-                                        if (cleanAnt.isNotEmpty()) {
-                                            NeoChip(
-                                                text = cleanAnt,
-                                                selected = true,
-                                                selectedColor = NeoRedLight,
-                                                contentColor = NeoBlack
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // BOX 6: Mnemonic learning card
-                if (wordEntity.mnemonic.isNotEmpty()) {
-                    NeoCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        backgroundColor = NeoYellowLight
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lightbulb,
-                                    contentDescription = null,
-                                    tint = NeoBlack,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "MEMORY AID",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                                    color = NeoBlack,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = wordEntity.mnemonic,
-                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
-                                color = NeoBlack,
-                                lineHeight = 14.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- BOX 7: Mastery Score Bar ---
-        NeoCard(
-            modifier = Modifier.fillMaxWidth(),
-            backgroundColor = NeoYellow
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .background(NeoWhite, shape = RoundedCornerShape(8.dp))
-                            .border(2.dp, NeoBlack, shape = RoundedCornerShape(8.dp)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "$masteryPercentage%",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black),
-                            color = NeoBlack
-                        )
-                    }
-
-                    Column {
-                        Text(
-                            text = "MASTERY SCORE",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black),
-                            color = NeoBlack,
-                            letterSpacing = 0.5.sp
-                        )
-                        Text(
-                            text = if (wordEntity.isBookmarked) "Saved to 'My Vocabulary' Deck" else "Searched Word (Unsaved)",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                            color = NeoBlack
-                        )
-                    }
-                }
-
-                Icon(
-                    imageVector = Icons.Default.Star,
-                    contentDescription = null,
-                    tint = if (wordEntity.isBookmarked) NeoRed else NeoBlack.copy(alpha = 0.3f),
-                    modifier = Modifier.size(26.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun ErrorStateCard(message: String, onRetry: () -> Unit) {
-    NeoCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .widthIn(max = 600.dp)
-            .testTag("error_state_card"),
-        backgroundColor = NeoRedLight
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = Icons.Default.Warning,
-                contentDescription = null,
-                tint = NeoBlack,
-                modifier = Modifier.size(36.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "SEARCH ISSUE",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Black,
-                color = NeoBlack,
-                letterSpacing = 0.5.sp
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                color = NeoBlack,
-                textAlign = TextAlign.Center
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            NeoDestructiveButton(
-                onClick = onRetry,
-                modifier = Modifier.height(44.dp)
-            ) {
-                Text("RETRY ANALYSIS", fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.5.sp)
-            }
-        }
-    }
-}
 
 fun filterWordList(
     list: List<WordEntity>,
@@ -1220,7 +314,7 @@ fun TagEditorDialog(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    text = if (isAlreadyAssigned) "✓ #$suggested" else "+ #$suggested",
+                                    text = if (isAlreadyAssigned) "âœ“ #$suggested" else "+ #$suggested",
                                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Black),
                                     color = NeoBlack
                                 )
@@ -1370,13 +464,13 @@ fun NeoAdvancedFilterBar(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "FILTERS: ${if (statusFilter != WordStatusFilter.ALL) statusFilter.name else ""} ${if (posFilter != "ALL") "• $posFilter" else ""} ${if (tagFilter.isNotBlank()) "• #$tagFilter" else ""}".trim().ifEmpty { "ALL WORDS" },
+                text = "FILTERS: ${if (statusFilter != WordStatusFilter.ALL) statusFilter.name else ""} ${if (posFilter != "ALL") "â€¢ $posFilter" else ""} ${if (tagFilter.isNotBlank()) "â€¢ #$tagFilter" else ""}".trim().ifEmpty { "ALL WORDS" },
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Black,
                 color = NeoBlack
             )
             Text(
-                text = if (expanded) "HIDE FILTERS ▲" else "MORE FILTERS ▼",
+                text = if (expanded) "HIDE FILTERS â–²" else "MORE FILTERS â–¼",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Black,
                 color = NeoBlack,
@@ -2017,7 +1111,7 @@ fun DailyReadingTabContent(
                                     containerColor = com.example.ui.theme.NeoGreen
                                 )
                                 NeoSectionBadge(
-                                    title = "LVL ${readingState.readingLevel} • ${readingState.cefrLevel}",
+                                    title = "LVL ${readingState.readingLevel} â€¢ ${readingState.cefrLevel}",
                                     containerColor = com.example.ui.theme.NeoYellow
                                 )
                             }
@@ -2783,41 +1877,6 @@ fun DailyReadingTabContent(
     }
 }
 
-@Composable
-fun SecurityWarningCard() {
-    NeoCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .widthIn(max = 600.dp)
-            .testTag("security_warning_card"),
-        backgroundColor = com.example.ui.theme.NeoCream
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = null,
-                    tint = com.example.ui.theme.NeoBlack,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "SECURITY NOTICE",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 0.5.sp,
-                    color = com.example.ui.theme.NeoBlack
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Security Warning: I have included your API keys in the generated APK file for this prototype. Please be aware that Android APKs can be easily decompiled, and these keys can be extracted by anyone who has access to the file. Do not share this APK file publicly or with unauthorized individuals to prevent potential misuse.",
-                style = MaterialTheme.typography.bodySmall,
-                color = com.example.ui.theme.NeoBlack.copy(alpha = 0.8f)
-            )
-        }
-    }
-}
 
 // FlowRow is a custom wrapping row helper since we don't have standard M3 flowrow in older compose
 @Composable
@@ -3234,7 +2293,7 @@ fun NeoQuizView(
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "STREAK: ${quizState.currentStreak} 🔥",
+                            text = "STREAK: ${quizState.currentStreak} ðŸ”¥",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Black,
                             color = NeoWhite
@@ -3405,7 +2464,7 @@ fun NeoQuizView(
                     .height(52.dp)
                     .testTag("quiz_next_button")
             ) {
-                Text("NEXT QUESTION →", fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
+                Text("NEXT QUESTION â†’", fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
             }
         }
     }
@@ -3493,7 +2552,7 @@ fun NeoSpellingView(
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "STREAK: ${spellingState.currentStreak} 🔥",
+                            text = "STREAK: ${spellingState.currentStreak} ðŸ”¥",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Black,
                             color = NeoWhite
@@ -3626,7 +2685,7 @@ fun NeoSpellingView(
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = if (isCorrect) "EXCELLENT! CORRECT SPELLING 🎉" else "INCORRECT!",
+                                text = if (isCorrect) "EXCELLENT! CORRECT SPELLING ðŸŽ‰" else "INCORRECT!",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Black,
                                 color = NeoWhite
@@ -3660,7 +2719,7 @@ fun NeoSpellingView(
                     .height(52.dp)
                     .testTag("spelling_submit_button")
             ) {
-                Text("CHECK SPELLING ✓", fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
+                Text("CHECK SPELLING âœ“", fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
             }
         } else {
             NeoButton(
@@ -3673,7 +2732,7 @@ fun NeoSpellingView(
                     .height(52.dp)
                     .testTag("spelling_next_button")
             ) {
-                Text("NEXT WORD →", fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
+                Text("NEXT WORD â†’", fontWeight = FontWeight.Black, letterSpacing = 0.5.sp)
             }
         }
     }
@@ -4243,7 +3302,7 @@ fun WordCardInfoDialog(
                     }
                 } else {
                     val dateFormatter = remember {
-                        java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy • HH:mm", java.util.Locale.US)
+                        java.time.format.DateTimeFormatter.ofPattern("MMM dd, yyyy â€¢ HH:mm", java.util.Locale.US)
                     }
                     LazyColumn(
                         modifier = Modifier
@@ -5702,7 +4761,7 @@ fun SettingsScreen(
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
                                             text = if (geminiLocked) {
-                                                "Gemini locked — using backup (OpenRouter)"
+                                                "Gemini locked â€” using backup (OpenRouter)"
                                             } else {
                                                 "Gemini active"
                                             },
@@ -5995,7 +5054,7 @@ fun SettingsScreen(
                                     title = "Get Gemini API Key (Free)",
                                     subtitle = "aistudio.google.com/app/apikey",
                                     url = "https://aistudio.google.com/app/apikey",
-                                    buttonText = "GET KEY ↗",
+                                    buttonText = "GET KEY â†—",
                                     badgeColor = NeoYellow,
                                     testTag = "gemini_tts_direct_link_banner"
                                 )
@@ -6127,7 +5186,7 @@ fun SettingsScreen(
                                                 )
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
-                                                    text = "Get your free Gemini API key here ↗",
+                                                    text = "Get your free Gemini API key here â†—",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = Color(0xFF0B57D0),
@@ -6153,7 +5212,7 @@ fun SettingsScreen(
                                                 viewModel.removeGeminiApiKey(index)
                                             },
                                             directLinkUrl = "https://aistudio.google.com/app/apikey",
-                                            directLinkLabel = "Get key from Google AI Studio (Free) ↗"
+                                            directLinkLabel = "Get key from Google AI Studio (Free) â†—"
                                         )
                                         Spacer(modifier = Modifier.height(14.dp))
                                     }
@@ -6214,7 +5273,7 @@ fun SettingsScreen(
                                     title = "Get Gemini API Key (Free)",
                                     subtitle = "aistudio.google.com/app/apikey",
                                     url = "https://aistudio.google.com/app/apikey",
-                                    buttonText = "GET KEY ↗",
+                                    buttonText = "GET KEY â†—",
                                     badgeColor = NeoYellow,
                                     testTag = "gemini_meaning_direct_link_banner"
                                 )
@@ -6320,7 +5379,7 @@ fun SettingsScreen(
                                                 )
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(
-                                                    text = "Get your free Gemini API key here ↗",
+                                                    text = "Get your free Gemini API key here â†—",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = Color(0xFF0B57D0),
@@ -6348,7 +5407,7 @@ fun SettingsScreen(
                                             labelPrefix = "Gemini Key",
                                             testTagPrefix = "gemini_meaning_key",
                                             directLinkUrl = "https://aistudio.google.com/app/apikey",
-                                            directLinkLabel = "Get key from Google AI Studio (Free) ↗"
+                                            directLinkLabel = "Get key from Google AI Studio (Free) â†—"
                                         )
                                         Spacer(modifier = Modifier.height(14.dp))
                                     }
@@ -6389,7 +5448,7 @@ fun SettingsScreen(
                                             .padding(horizontal = 12.dp, vertical = 8.dp)
                                     ) {
                                         Text(
-                                            text = "No key set — this feature is disabled until you add one.",
+                                            text = "No key set â€” this feature is disabled until you add one.",
                                             style = MaterialTheme.typography.bodySmall,
                                             fontWeight = FontWeight.Bold,
                                             color = NeoRed,
@@ -6515,7 +5574,7 @@ fun SettingsScreen(
                                                         if (isSelected) {
                                                             Spacer(modifier = Modifier.width(12.dp))
                                                             Text(
-                                                                text = "✓",
+                                                                text = "âœ“",
                                                                 fontWeight = FontWeight.Black,
                                                                 color = NeoGreen
                                                             )
@@ -7184,7 +6243,7 @@ fun SettingsScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "New and less tested — you can switch back anytime.",
+                                    text = "New and less tested â€” you can switch back anytime.",
                                     style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
                                     color = NeoBlack.copy(alpha = 0.7f)
                                 )
@@ -7543,7 +6602,7 @@ fun ApiKeyDirectLinkBanner(
     title: String,
     subtitle: String,
     url: String,
-    buttonText: String = "GET KEY ↗",
+    buttonText: String = "GET KEY â†—",
     containerColor: Color = NeoCream,
     badgeColor: Color = NeoYellow,
     testTag: String = "api_key_direct_link_banner"
@@ -7799,7 +6858,7 @@ fun GeminiKeyRowItem(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = directLinkLabel ?: "Get API Key ↗",
+                    text = directLinkLabel ?: "Get API Key â†—",
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF0B57D0),
@@ -7821,7 +6880,7 @@ fun SingleApiKeyCard(
     testTagPrefix: String,
     onSaveKey: (String) -> Unit,
     onClearKey: () -> Unit,
-    disabledHint: String = "No key set — this feature is disabled until you add one.",
+    disabledHint: String = "No key set â€” this feature is disabled until you add one.",
     directLinkUrl: String? = null,
     directLinkLabel: String? = null,
     directLinkSubtitle: String? = null
@@ -7860,7 +6919,7 @@ fun SingleApiKeyCard(
                     title = directLinkLabel ?: "Get API Key",
                     subtitle = directLinkSubtitle ?: directLinkUrl.removePrefix("https://").removeSuffix("/"),
                     url = directLinkUrl,
-                    buttonText = "GET KEY ↗",
+                    buttonText = "GET KEY â†—",
                     badgeColor = badgeColor,
                     testTag = "${testTagPrefix}_direct_link_banner"
                 )
@@ -7948,7 +7007,7 @@ fun SingleApiKeyCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Get key directly: ${directLinkSubtitle ?: directLinkUrl} ↗",
+                        text = "Get key directly: ${directLinkSubtitle ?: directLinkUrl} â†—",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF0B57D0),
@@ -8602,7 +7661,7 @@ fun StreakHeatmapCard(stats: DetailedSrsStats) {
                                             color = NeoBlack
                                         )
                                         if (day.isToday) {
-                                            Text("★", fontSize = 7.sp, fontWeight = FontWeight.Black, color = NeoBlack)
+                                            Text("â˜…", fontSize = 7.sp, fontWeight = FontWeight.Black, color = NeoBlack)
                                         }
                                     }
                                 }
@@ -8785,7 +7844,7 @@ fun LeechManagementCard(
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${word.lapses} lapses • Ease: ${String.format("%.2f", word.easeFactor)} • Interval: ${word.interval}d",
+                                        text = "${word.lapses} lapses â€¢ Ease: ${String.format("%.2f", word.easeFactor)} â€¢ Interval: ${word.interval}d",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = NeoBlack.copy(alpha = 0.7f)
                                     )
