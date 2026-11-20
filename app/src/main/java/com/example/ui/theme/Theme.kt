@@ -1,77 +1,66 @@
 package com.example.ui.theme
 
+import android.app.Activity
 import android.os.Build
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
-private data class ThemeAccents(
-    val primary: Color,
-    val primaryContainer: Color,
-    val onPrimary: Color,
-    val onPrimaryContainer: Color
-)
-
-fun getDynamicColorScheme(themeColor: String): ColorScheme {
-    val accent = when (themeColor.lowercase()) {
-        "blue" -> ThemeAccents(Color(0xFF0284C7), Color(0xFFBAE6FD), NeoWhite, NeoBlack)
-        "green" -> ThemeAccents(Color(0xFF059669), Color(0xFFA7F3D0), NeoWhite, NeoBlack)
-        "orange" -> ThemeAccents(Color(0xFFEA580C), Color(0xFFFFEDD5), NeoWhite, NeoBlack)
-        "pink" -> ThemeAccents(Color(0xFFE11D48), Color(0xFFFFE4E6), NeoWhite, NeoBlack)
-        "teal" -> ThemeAccents(Color(0xFF0D9488), Color(0xFFCCFBF1), NeoWhite, NeoBlack)
-        "red" -> ThemeAccents(NeoRed, NeoRedLight, NeoWhite, NeoBlack)
-        else -> { // "yellow" or default
-            ThemeAccents(NeoYellow, NeoYellowLight, NeoBlack, NeoBlack)
-        }
-    }
-
-    return LightColorScheme.copy(
-        primary = accent.primary,
-        primaryContainer = accent.primaryContainer,
-        onPrimary = accent.onPrimary,
-        onPrimaryContainer = accent.onPrimaryContainer
-    )
-}
-
-private val LightColorScheme = lightColorScheme(
-    primary = NeoYellow,
-    primaryContainer = NeoYellow,
-    onPrimary = NeoBlack,
-    secondary = NeoRed,
-    onSecondary = NeoWhite,
-    tertiary = NeoCyan,
-    background = NeoCream,
-    surface = NeoWhite,
-    onBackground = NeoBlack,
-    onSurface = NeoBlack,
-    onSurfaceVariant = NeoNearBlack,
-    outline = NeoBlack,
-    error = NeoRed,
-    onError = NeoWhite
-)
+/**
+ * Returns a complete M3 Light or Dark ColorScheme for the requested theme preset.
+ */
+fun getDynamicColorScheme(
+    themeColor: String,
+    darkTheme: Boolean = false
+): ColorScheme = presetColorScheme(themeColor = themeColor, darkTheme = darkTheme)
 
 @Composable
 fun MyApplicationTheme(
     themeColor: String = "yellow",
-    dynamicColor: Boolean = false,
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit,
 ) {
+    val context = LocalContext.current
+    val useDynamic = dynamicColor &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        (themeColor.equals("yellow", ignoreCase = true) || themeColor.equals("dynamic", ignoreCase = true))
+
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            dynamicLightColorScheme(context)
+        useDynamic -> {
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        else -> getDynamicColorScheme(themeColor)
+        else -> getDynamicColorScheme(themeColor = themeColor, darkTheme = darkTheme)
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
-}
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window
+            if (window != null) {
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !darkTheme
+                controller.isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
+    }
 
+    val reducedMotion = rememberReducedMotionEnabled()
+
+    CompositionLocalProvider(LocalReducedMotionEnabled provides reducedMotion) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            shapes = RedeusShapes,
+            content = content
+        )
+    }
+}
