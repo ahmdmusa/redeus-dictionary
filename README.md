@@ -1,22 +1,57 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Redeus Dictionary
 
-# Run and deploy your AI Studio app
+A native Android English dictionary and vocabulary-learning app built with **Kotlin**, **Jetpack Compose**, **Material Design 3**, **Room**, and **Retrofit**.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/82e85092-5c56-4784-884c-63dd97a31088
+- **AI-Powered Word Lookup:** Rich definitions, US/UK phonetics, parts of speech, usage examples, synonyms/antonyms, mnemonics, and AI or Pexels visual illustrations via Gemini (with OpenRouter fallback).
+- **Pronunciation (TTS):** Online Gemini AI voice or built-in Android TTS with US/UK accent and Normal/Slow speed controls.
+- **Personal Vocabulary Library:** Bookmarked deck, search history, and advanced filtering by SRS status, part of speech, and custom tags/decks.
+- **Spaced-Repetition Smart Review:** Supports both **FSRS** (with configurable target retention) and classic **SM-2**, leech detection, and detailed 30-day/all-time analytics.
+- **Practice Modes:** Flip flashcards, multiple-choice quizzes, and audio dictation/spelling tests.
+- **Daily Reading:** CEFR-leveled (A1–C1) AI reading passages with comprehension questions and grammar checks.
+- **Sentence Mining:** Save context sentences from dictionary lookups or daily media and practice them in Cloze deletion mode.
+- **Habit Tracking & Reminders:** 60-day activity heatmap, daily habit goal, and scheduled study reminder notifications.
 
-## Run Locally
+## Material Design 3 Architecture
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+- **Color System:** Semantic M3 Light & Dark tonal palettes seeded from Scholarly Indigo (`#3B5BA9`) with Warm Ochre tertiary accents (`#B36B00` / `#F2B84B`), full `surfaceContainer*` hierarchy, Android 12+ **Dynamic Color** (Material You), and selectable theme presets.
+- **Typography & Shapes:** Full M3 type scale with selective M3 Expressive focal styling (headwords, streaks, scores), standard M3 shape tokens (`4 / 8 / 12 / 16 / 28dp`), and tonal containment.
+- **Adaptive Layouts:** `WindowWidthSizeClass`-driven navigation (`NavigationBar` on compact, `NavigationRail` on medium/expanded) with two-pane layouts on expanded screens (Search, Library list-detail, Daily Reading, Settings).
+- **Accessibility & RTL:** `android:supportsRtl="true"`, Arabic/large-font-safe layouts, minimum `48dp` touch targets, accessible labels, and reduced-motion (`ANIMATOR_DURATION_SCALE`) support.
 
+## Setup & Running Locally
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
-7. If you have already published your app in AI Studio, please [request upload key reset](https://support.google.com/googleplay/android-developer/answer/9842756#zippy=%2Crequest-an-upload-key-reset) in Google Play Console.
+### Prerequisites
+- Android Studio (or JDK 21 + Android SDK API 36)
+- Optional: API keys from [Google AI Studio](https://aistudio.google.com/app/apikey), [OpenRouter](https://openrouter.ai/keys), and [Pexels](https://www.pexels.com/api/) (you can also configure keys in-app under **Settings → Preferences**).
+
+### Configuration
+1. Copy `.env.example` to `.env` in the project root:
+   ```bash
+   cp .env.example .env
+   ```
+2. Fill in your local keys in `.env` (or leave placeholder values if you prefer configuring keys inside the app's Settings screen).
+3. Ensure `local.properties` points to your Android SDK (`sdk.dir=...`). Android Studio creates this automatically on sync.
+
+### Build & Run
+```bash
+# Windows
+.\gradlew.bat assembleDebug
+
+# macOS / Linux
+./gradlew assembleDebug
+```
+
+To install on a connected Android device:
+```bash
+.\gradlew.bat installDebug
+```
+
+## Security Notice
+
+> **Important:** This project uses the Secrets Gradle Plugin to inject values from `.env` into `BuildConfig` at compile time. Because compiled Android APKs can be decompiled, **never ship or distribute release APKs built with real API keys in `.env`**. For public builds, keep `.env` empty or use placeholder values and let users supply their own keys in Settings (or route requests through a backend proxy).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
