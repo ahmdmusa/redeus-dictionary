@@ -27,7 +27,8 @@ class WordRepository(
     private val openRouterApiService: OpenRouterApiService = OpenRouterApiService.create(),
     private val context: Context? = null,
     private val readingSessionDao: ReadingSessionDao? = null,
-    private val minedSentenceDao: MinedSentenceDao? = null
+    private val minedSentenceDao: MinedSentenceDao? = null,
+    private val offlineDictionary: OfflineDictionaryDatabase? = context?.let { OfflineDictionaryDatabase.getInstance(it) }
 ) {
     val allWords: Flow<List<WordEntity>> = wordDao.getAllWords()
     val bookmarkedWords: Flow<List<WordEntity>> = wordDao.getBookmarkedWords()
@@ -35,6 +36,144 @@ class WordRepository(
         readingSessionDao?.getAllSessions() ?: kotlinx.coroutines.flow.flowOf(emptyList())
     val allMinedSentences: Flow<List<MinedSentenceEntity>> =
         minedSentenceDao?.getAllSentences() ?: kotlinx.coroutines.flow.flowOf(emptyList())
+
+    suspend fun getOfflineBooks(): List<OfflineBook> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getAllBooks() ?: emptyList()
+    }
+
+    suspend fun getOfflineUnitsForBook(bookNum: Int): List<OfflineUnit> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getUnitsForBook(bookNum) ?: emptyList()
+    }
+
+    suspend fun getOfflineWordsForUnit(bookNum: Int, unitNum: Int): List<OfflineCurriculumWord> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getWordsForUnit(bookNum, unitNum) ?: emptyList()
+    }
+
+    suspend fun getOfflineTopics(): List<OfflineTopic> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getAllTopics() ?: emptyList()
+    }
+
+    suspend fun getOfflineWordsForTopic(topicId: String): List<OfflineCurriculumWord> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getWordsForTopic(topicId) ?: emptyList()
+    }
+
+    suspend fun getOfflineBookWordLowersMap(): Map<Int, Set<String>> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getBookWordLowersMap() ?: emptyMap()
+    }
+
+    suspend fun getOfflineUnitWordLowersMap(bookNum: Int): Map<Int, Set<String>> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getUnitWordLowersMap(bookNum) ?: emptyMap()
+    }
+
+    suspend fun getOfflineTopicWordLowersMap(): Map<String, Set<String>> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getTopicWordLowersMap() ?: emptyMap()
+    }
+
+    suspend fun searchOfflineSuggestions(query: String, limit: Int = 10): List<OfflineSearchSuggestion> = withContext(Dispatchers.IO) {
+        offlineDictionary?.searchSuggestions(query, limit) ?: emptyList()
+    }
+
+    suspend fun searchOfflineCurriculumWords(
+        query: String,
+        category: String? = null,
+        limit: Int = 60
+    ): List<OfflineCurriculumWord> = withContext(Dispatchers.IO) {
+        offlineDictionary?.searchCurriculumWords(query, category, limit) ?: emptyList()
+    }
+
+    suspend fun lookupOfflineArabicTranslation(word: String): String? = withContext(Dispatchers.IO) {
+        offlineDictionary?.getGeneralArabicTranslation(word)
+    }
+
+    suspend fun hasOfflineCurriculumOrDictWord(word: String): Boolean = withContext(Dispatchers.IO) {
+        val db = offlineDictionary ?: return@withContext false
+        db.findBestCurriculumWord(word) != null || db.getGeneralArabicTranslation(word) != null
+    }
+
+    suspend fun updateArabicMeaning(word: String, arabicMeaning: String) = withContext(Dispatchers.IO) {
+        wordDao.updateArabicMeaning(word.trim(), arabicMeaning)
+    }
+
+    /**
+     * Opens a curriculum word for viewing without losing existing bookmark/SRS/AI enrichment state.
+     */
+    suspend fun openCurriculumWord(
+        item: OfflineCurriculumWord,
+        extraTags: List<String> = emptyList()
+    ): WordEntity = withContext(Dispatchers.IO) {
+        val clean = item.word.trim().lowercase()
+        val occurrences = offlineDictionary?.findAllCurriculumOccurrences(clean).orEmpty()
+            .ifEmpty { listOf(item) }
+        val existing = wordDao.getWord(clean)
+        val built = OfflineDictionaryDatabase.toWordEntity(
+            item = item,
+            allOccurrences = occurrences,
+            isBookmarked = existing?.isBookmarked ?: false,
+            extraTags = extraTags
+        )
+        val finalEntity = if (existing != null) {
+            existing.copy(
+                phonetic = existing.phonetic.ifBlank { built.phonetic },
+                partOfSpeech = existing.partOfSpeech.ifBlank { built.partOfSpeech },
+                definition = existing.definition.ifBlank { built.definition },
+                example = existing.example.ifBlank { built.example },
+                arabicMeaning = existing.arabicMeaning.ifBlank { built.arabicMeaning },
+                tags = OfflineDictionaryDatabase.mergeTags(existing.tags, built.tags),
+                timestamp = System.currentTimeMillis()
+            )
+        } else {
+            built
+        }
+        wordDao.insertWord(finalEntity)
+        finalEntity
+    }
+
+    /**
+     * Adds one or more curriculum words directly into the user's Anki/FSRS Personal Deck
+     * (isBookmarked = true, dueDate = today for new cards) while preserving existing FSRS progress.
+     * Returns the number of words newly added or newly bookmarked into the Deck.
+     */
+    suspend fun addCurriculumWordsToDeck(
+        words: List<OfflineCurriculumWord>,
+        extraTags: List<String> = emptyList()
+    ): Int = withContext(Dispatchers.IO) {
+        var addedCount = 0
+        val now = System.currentTimeMillis()
+        words.forEachIndexed { idx, item ->
+            val clean = item.word.trim().lowercase()
+            if (clean.isEmpty()) return@forEachIndexed
+            val occurrences = offlineDictionary?.findAllCurriculumOccurrences(clean).orEmpty()
+                .ifEmpty { listOf(item) }
+            val existing = wordDao.getWord(clean)
+            val built = OfflineDictionaryDatabase.toWordEntity(
+                item = item,
+                allOccurrences = occurrences,
+                isBookmarked = true,
+                extraTags = extraTags
+            ).copy(timestamp = now + idx)
+
+            if (existing == null) {
+                wordDao.insertWord(built)
+                addedCount++
+            } else {
+                val mergedTags = OfflineDictionaryDatabase.mergeTags(existing.tags, built.tags)
+                val updated = existing.copy(
+                    phonetic = existing.phonetic.ifBlank { built.phonetic },
+                    partOfSpeech = existing.partOfSpeech.ifBlank { built.partOfSpeech },
+                    definition = existing.definition.ifBlank { built.definition },
+                    example = existing.example.ifBlank { built.example },
+                    arabicMeaning = existing.arabicMeaning.ifBlank { built.arabicMeaning },
+                    isBookmarked = true,
+                    tags = mergedTags
+                )
+                wordDao.insertWord(updated)
+                if (!existing.isBookmarked) {
+                    addedCount++
+                }
+            }
+        }
+        addedCount
+    }
 
     suspend fun insertReadingSession(session: ReadingSessionEntity) = withContext(Dispatchers.IO) {
         readingSessionDao?.insertSession(session)
@@ -295,20 +434,50 @@ class WordRepository(
         pexelsQuerySource: String? = null,
         geminiApiKeys: List<String> = emptyList(),
         geminiModel: String = "gemini-3.5-flash-lite",
-        pexelsApiKey: String = ""
+        pexelsApiKey: String = "",
+        forceAiEnrich: Boolean = false
     ): Result<WordEntity> = withContext(Dispatchers.IO) {
         val cleanWord = word.trim().lowercase()
         if (cleanWord.isEmpty()) {
             return@withContext Result.failure(IllegalArgumentException("Word cannot be empty"))
         }
 
-        // 1. Check local cache
+        // 1. Check local Room cache
         val localCached = wordDao.getWord(cleanWord)
-        if (localCached != null) {
-            // Update timestamp to bring it to the top of history
-            val updated = localCached.copy(timestamp = System.currentTimeMillis())
+        if (localCached != null && !forceAiEnrich) {
+            val offlineArabic = if (localCached.arabicMeaning.isBlank()) {
+                offlineDictionary?.getGeneralArabicTranslation(cleanWord) ?: ""
+            } else {
+                localCached.arabicMeaning
+            }
+            val updated = localCached.copy(
+                arabicMeaning = offlineArabic,
+                timestamp = System.currentTimeMillis()
+            )
             wordDao.insertWord(updated)
             return@withContext Result.success(updated)
+        }
+
+        // 2. Offline-first lookup in bundled 9-book curriculum (6 Essential Books + 3 IELTS Books)
+        if (!forceAiEnrich) {
+            val curriculumOccurrences = offlineDictionary?.findAllCurriculumOccurrences(cleanWord).orEmpty()
+            val bestCurriculum = curriculumOccurrences.firstOrNull()
+            if (bestCurriculum != null) {
+                val entity = OfflineDictionaryDatabase.toWordEntity(
+                    item = bestCurriculum,
+                    allOccurrences = curriculumOccurrences,
+                    isBookmarked = false
+                )
+                wordDao.insertWord(entity)
+                return@withContext Result.success(entity)
+            }
+        }
+
+        val offlineGeneralArabic = if (!forceAiEnrich) {
+            offlineDictionary?.getGeneralArabicTranslation(cleanWord)
+        } else {
+            localCached?.arabicMeaning?.takeIf { it.isNotBlank() }
+                ?: offlineDictionary?.getGeneralArabicTranslation(cleanWord)
         }
 
         val systemPrompt = """
@@ -374,6 +543,23 @@ class WordRepository(
         val effectiveOpenRouterKey = if (openRouterApiKey.isNotBlank()) openRouterApiKey else (context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("openrouter_api_key", "") ?: "")
         val effectivePexelsKey = if (pexelsApiKey.isNotBlank()) pexelsApiKey else (context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_api_key", "") ?: "")
         val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-3.5-flash-lite" }
+
+        val hasAnyAiKey = keysToUse.any { it.trim().isNotBlank() && it.trim() != "MY_GEMINI_API_KEY" } ||
+            (effectiveOpenRouterKey.isNotBlank() && effectiveOpenRouterKey != "MY_OPENROUTER_API_KEY")
+
+        // 3. If no AI keys are configured (and not forcing AI enrichment), serve the 87K offline English-Arabic dictionary entry immediately
+        if (!forceAiEnrich && !hasAnyAiKey && !offlineGeneralArabic.isNullOrBlank()) {
+            val offlineEntity = WordEntity(
+                word = cleanWord,
+                definition = offlineGeneralArabic,
+                isBookmarked = false,
+                timestamp = System.currentTimeMillis(),
+                tags = "Offline Dictionary",
+                arabicMeaning = offlineGeneralArabic
+            )
+            wordDao.insertWord(offlineEntity)
+            return@withContext Result.success(offlineEntity)
+        }
 
         val aiResult = fetchAiTextWithFallback(
             tag = "searchWord",
@@ -478,20 +664,36 @@ class WordRepository(
                         }
                     }
 
-                    // Map and save to database
-                    val wordEntity = WordEntity(
-                        word = apiResponse.word.trim().lowercase(),
-                        phonetic = apiResponse.phonetic,
-                        partOfSpeech = apiResponse.partOfSpeech,
-                        definition = apiResponse.definition,
-                        synonyms = apiResponse.synonyms.joinToString(", "),
-                        antonyms = apiResponse.antonyms.joinToString(", "),
-                        example = apiResponse.example,
-                        mnemonic = apiResponse.mnemonic,
-                        imagePrompt = finalImagePrompt,
-                        isBookmarked = false,
-                        timestamp = System.currentTimeMillis()
-                    )
+                    // Map and save to database (preserving bookmark, FSRS/SM-2 stats, tags, and Arabic meaning when enriching)
+                    val wordEntity = if (forceAiEnrich && localCached != null) {
+                        localCached.copy(
+                            phonetic = apiResponse.phonetic.ifBlank { localCached.phonetic },
+                            partOfSpeech = apiResponse.partOfSpeech.ifBlank { localCached.partOfSpeech },
+                            definition = apiResponse.definition.ifBlank { localCached.definition },
+                            synonyms = apiResponse.synonyms.joinToString(", ").ifBlank { localCached.synonyms },
+                            antonyms = apiResponse.antonyms.joinToString(", ").ifBlank { localCached.antonyms },
+                            example = apiResponse.example.ifBlank { localCached.example },
+                            mnemonic = apiResponse.mnemonic.ifBlank { localCached.mnemonic },
+                            imagePrompt = finalImagePrompt.ifBlank { localCached.imagePrompt },
+                            arabicMeaning = localCached.arabicMeaning.ifBlank { offlineGeneralArabic ?: "" },
+                            timestamp = System.currentTimeMillis()
+                        )
+                    } else {
+                        WordEntity(
+                            word = apiResponse.word.trim().lowercase(),
+                            phonetic = apiResponse.phonetic,
+                            partOfSpeech = apiResponse.partOfSpeech,
+                            definition = apiResponse.definition,
+                            synonyms = apiResponse.synonyms.joinToString(", "),
+                            antonyms = apiResponse.antonyms.joinToString(", "),
+                            example = apiResponse.example,
+                            mnemonic = apiResponse.mnemonic,
+                            imagePrompt = finalImagePrompt,
+                            isBookmarked = false,
+                            timestamp = System.currentTimeMillis(),
+                            arabicMeaning = offlineGeneralArabic ?: ""
+                        )
+                    }
 
                     wordDao.insertWord(wordEntity)
                     Result.success(wordEntity)
@@ -500,7 +702,21 @@ class WordRepository(
                 }
             },
             onFailure = { error ->
-                Result.failure(error)
+                // Graceful offline fallback to the 87K English-Arabic dictionary if AI fails or user is offline
+                if (!forceAiEnrich && !offlineGeneralArabic.isNullOrBlank()) {
+                    val offlineEntity = WordEntity(
+                        word = cleanWord,
+                        definition = offlineGeneralArabic,
+                        isBookmarked = false,
+                        timestamp = System.currentTimeMillis(),
+                        tags = "Offline Dictionary",
+                        arabicMeaning = offlineGeneralArabic
+                    )
+                    wordDao.insertWord(offlineEntity)
+                    Result.success(offlineEntity)
+                } else {
+                    Result.failure(error)
+                }
             }
         )
     }
@@ -958,6 +1174,12 @@ class WordRepository(
         geminiModel: String = "gemini-3.5-flash-lite",
         openRouterApiKey: String = ""
     ): Result<String> = withContext(Dispatchers.IO) {
+        val offlineArabic = offlineDictionary?.getGeneralArabicTranslation(word)
+        if (!offlineArabic.isNullOrBlank()) {
+            wordDao.updateArabicMeaning(word.trim(), offlineArabic)
+            return@withContext Result.success(offlineArabic)
+        }
+
         val systemPrompt = "You are a concise English-to-Arabic dictionary translator. Return ONLY the Arabic translation and brief Arabic meaning in 1-2 short lines, with no English intro or markdown."
         val userPrompt = "Translate the English word \"$word\" (definition: \"$definition\") into natural Arabic."
         val request = GenerateContentRequest(
@@ -977,7 +1199,13 @@ class WordRepository(
             systemPrompt = systemPrompt,
             userPrompt = userPrompt,
             openRouterApiKey = effectiveOpenRouterKey
-        ).map { it.trim() }
+        ).map { translated ->
+            val cleanAr = translated.trim()
+            if (cleanAr.isNotBlank()) {
+                wordDao.updateArabicMeaning(word.trim(), cleanAr)
+            }
+            cleanAr
+        }
     }
 
     companion object {

@@ -29,6 +29,9 @@ interface WordDao {
     @Query("UPDATE words SET tags = :tags WHERE LOWER(word) = LOWER(:word)")
     suspend fun updateWordTags(word: String, tags: String)
 
+    @Query("UPDATE words SET arabicMeaning = :arabicMeaning WHERE LOWER(word) = LOWER(:word)")
+    suspend fun updateArabicMeaning(word: String, arabicMeaning: String)
+
     @Query("UPDATE words SET imagePrompt = :imagePrompt WHERE LOWER(word) = LOWER(:word)")
     suspend fun updateWordImagePrompt(word: String, imagePrompt: String)
 

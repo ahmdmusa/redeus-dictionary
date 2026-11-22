@@ -31,6 +31,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.text.font.FontWeight
 import com.example.ui.*
 import com.example.ui.components.CardStatusBadge
 import com.example.ui.components.DailyStreakAndHeatmapBanner
@@ -44,13 +47,16 @@ import com.example.ui.theme.RedeusMotion
 @Composable
 fun ReviewTabContent(
     viewModel: DictionaryViewModel,
-    innerPadding: PaddingValues
+    innerPadding: PaddingValues,
+    onNavigateToCourses: () -> Unit = {}
 ) {
     val reviewQueue by viewModel.reviewQueue.collectAsStateWithLifecycle()
     val bookmarkedWords by viewModel.bookmarksState.collectAsStateWithLifecycle()
     val cardsDueTodayCount by viewModel.cardsDueTodayCount.collectAsStateWithLifecycle()
     val selectedReviewDeck by viewModel.selectedReviewDeck.collectAsStateWithLifecycle()
     val availableTags by viewModel.allAvailableTags.collectAsStateWithLifecycle()
+    val arabicEnabled by viewModel.arabicTranslationEnabled.collectAsStateWithLifecycle()
+    val wordArabicTranslations by viewModel.wordArabicTranslations.collectAsStateWithLifecycle()
     val reducedMotion = LocalReducedMotionEnabled.current
 
     LaunchedEffect(cardsDueTodayCount) {
@@ -64,7 +70,7 @@ fun ReviewTabContent(
             .fillMaxSize()
             .padding(innerPadding)
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (availableTags.isNotEmpty()) {
@@ -72,7 +78,7 @@ fun ReviewTabContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .widthIn(max = 640.dp)
-                    .padding(bottom = 12.dp)
+                    .padding(bottom = 10.dp)
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -109,7 +115,8 @@ fun ReviewTabContent(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                 ) {
                     Column(
                         modifier = Modifier
@@ -126,33 +133,64 @@ fun ReviewTabContent(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = Icons.Default.CheckCircle,
+                                    imageVector = if (bookmarkedWords.isEmpty()) Icons.Default.School else Icons.Default.CheckCircle,
                                     contentDescription = null,
-                                    modifier = Modifier.size(36.dp)
+                                    modifier = Modifier.size(34.dp)
                                 )
                             }
                         }
                         Text(
-                            text = "All caught up",
+                            text = if (bookmarkedWords.isEmpty()) "Start your Anki FSRS Deck" else "All caught up",
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center
                         )
                         Text(
-                            text = "You have completed all vocabulary reviews scheduled for today. Return tomorrow for your next spaced-repetition session.",
+                            text = if (bookmarkedWords.isEmpty()) {
+                                "Add 10–20 words from the 6 Essential Books or 3 IELTS Books to begin smart spaced-repetition study."
+                            } else {
+                                "You have completed all vocabulary reviews scheduled for today. Return tomorrow for your next spaced-repetition session."
+                            },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(4.dp))
-                        Button(
-                            onClick = { viewModel.startReviewSession() },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 52.dp)
-                                .testTag("start_review_button")
-                        ) {
-                            Text("Practice all (${bookmarkedWords.size} cards)")
+                        if (bookmarkedWords.isEmpty()) {
+                            Button(
+                                onClick = onNavigateToCourses,
+                                shape = MaterialTheme.shapes.medium,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 52.dp)
+                                    .testTag("browse_courses_from_review_button")
+                            ) {
+                                Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Browse 6 Books & IELTS")
+                            }
+                        } else {
+                            Button(
+                                onClick = { viewModel.startReviewSession() },
+                                shape = MaterialTheme.shapes.medium,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 52.dp)
+                                    .testTag("start_review_button")
+                            ) {
+                                Text("Practice all (${bookmarkedWords.size} cards)")
+                            }
+                            OutlinedButton(
+                                onClick = onNavigateToCourses,
+                                shape = MaterialTheme.shapes.medium,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Add more words from Books & IELTS")
+                            }
                         }
                     }
                 }
@@ -163,6 +201,9 @@ fun ReviewTabContent(
             var showReviewCardInfoDialog by remember { mutableStateOf(false) }
             val autoPronounce by viewModel.autoPronounceEnabled.collectAsStateWithLifecycle()
             val isRatingInProgress by viewModel.isRatingInProgress.collectAsStateWithLifecycle()
+            val intervalPreviews = remember(currentCard.word, currentCard.repetitions, currentCard.interval, currentCard.fsrsStability) {
+                viewModel.previewReviewIntervals(currentCard)
+            }
 
             if (showReviewCardInfoDialog) {
                 WordCardInfoDialog(
@@ -174,6 +215,9 @@ fun ReviewTabContent(
 
             LaunchedEffect(currentCard.word) {
                 flipped = false
+                if (arabicEnabled) {
+                    viewModel.ensureOfflineArabicLoaded(currentCard)
+                }
                 if (autoPronounce) {
                     viewModel.speak(currentCard.word)
                 }
@@ -184,26 +228,31 @@ fun ReviewTabContent(
                     .fillMaxSize()
                     .widthIn(max = 640.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                // Refined Apple-style session header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Active review",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Column {
+                        Text(
+                            text = if (selectedReviewDeck.equals("ALL", ignoreCase = true)) "Active Review" else "#$selectedReviewDeck",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     Surface(
                         shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.85f),
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                     ) {
                         Text(
                             text = "${reviewQueue.size} left",
-                            style = MaterialTheme.typography.labelLarge,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                         )
                     }
@@ -214,6 +263,11 @@ fun ReviewTabContent(
                     targetValue = if (flipped) 180f else 0f,
                     animationSpec = RedeusMotion.spec(reducedMotion, RedeusMotion.DurationLong),
                     label = "reviewCardFlip"
+                )
+
+                val cardBorder = BorderStroke(
+                    width = 0.5.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
                 )
 
                 Box(
@@ -234,7 +288,8 @@ fun ReviewTabContent(
                             modifier = Modifier.fillMaxSize(),
                             shape = MaterialTheme.shapes.large,
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
-                            tonalElevation = 2.dp
+                            border = cardBorder,
+                            tonalElevation = 0.dp
                         ) {
                             Box(modifier = Modifier.fillMaxSize()) {
                                 Row(
@@ -251,12 +306,13 @@ fun ReviewTabContent(
                                     IconButton(
                                         onClick = { showReviewCardInfoDialog = true },
                                         modifier = Modifier
-                                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                                            .sizeIn(minWidth = 44.dp, minHeight = 44.dp)
                                             .testTag("active_review_card_info_button")
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Info,
-                                            contentDescription = "Card review history"
+                                            contentDescription = "Card review history",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                 }
@@ -265,7 +321,7 @@ fun ReviewTabContent(
                                     modifier = Modifier
                                         .align(Alignment.Center)
                                         .verticalScroll(rememberScrollState())
-                                        .padding(24.dp),
+                                        .padding(horizontal = 24.dp, vertical = 20.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
@@ -297,13 +353,13 @@ fun ReviewTabContent(
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Surface(
                                         shape = MaterialTheme.shapes.small,
-                                        color = MaterialTheme.colorScheme.surfaceContainerHigh
+                                        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.7f)
                                     ) {
                                         Text(
-                                            text = "Tap card to reveal details",
+                                            text = "Tap card to reveal answer",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                                         )
                                     }
                                 }
@@ -317,16 +373,17 @@ fun ReviewTabContent(
                                     rotationY = if (reducedMotion) 0f else 180f
                                 },
                             shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.surfaceContainer,
-                            tonalElevation = 2.dp
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            border = cardBorder,
+                            tonalElevation = 0.dp
                         ) {
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .verticalScroll(rememberScrollState())
-                                    .padding(20.dp),
+                                    .padding(horizontal = 18.dp, vertical = 16.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+                                verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)
                             ) {
                                 if (currentCard.imagePrompt.isNotEmpty()) {
                                     val context = LocalContext.current
@@ -334,7 +391,7 @@ fun ReviewTabContent(
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .aspectRatio(4f / 3f)
+                                            .height(164.dp)
                                             .clip(MaterialTheme.shapes.medium)
                                             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     ) {
@@ -349,7 +406,7 @@ fun ReviewTabContent(
                                             modifier = Modifier.fillMaxSize(),
                                             loading = {
                                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                                                 }
                                             },
                                             error = {
@@ -371,6 +428,7 @@ fun ReviewTabContent(
                                         TryAnotherPhotoButton(
                                             word = currentCard,
                                             viewModel = viewModel,
+                                            compact = true,
                                             modifier = Modifier
                                                 .align(Alignment.TopEnd)
                                                 .padding(8.dp)
@@ -384,41 +442,69 @@ fun ReviewTabContent(
                                 ) {
                                     Text(
                                         text = currentCard.word.replaceFirstChar { it.uppercase() },
-                                        style = MaterialTheme.typography.headlineMedium,
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     FilledTonalIconButton(
                                         onClick = { viewModel.speak(currentCard.word) },
                                         modifier = Modifier
-                                            .size(48.dp)
+                                            .size(40.dp)
                                             .testTag("speak_review_back_button")
                                     ) {
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                            contentDescription = "Pronounce word"
+                                            contentDescription = "Pronounce word",
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
                                 }
 
                                 val selectedAccent by viewModel.selectedAccent.collectAsStateWithLifecycle()
                                 val displayPhonetic = getPhoneticForAccent(currentCard.phonetic, selectedAccent)
-                                Text(
-                                    text = displayPhonetic,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                                if (displayPhonetic.isNotBlank()) {
+                                    Text(
+                                        text = displayPhonetic,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
 
-                                Text(
-                                    text = currentCard.definition,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    textAlign = TextAlign.Center
-                                )
+                                val arabicMeaning = currentCard.arabicMeaning.ifBlank {
+                                    wordArabicTranslations[currentCard.word.trim().lowercase()] ?: ""
+                                }
+                                if (arabicEnabled && arabicMeaning.isNotBlank()) {
+                                    Surface(
+                                        shape = MaterialTheme.shapes.small,
+                                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                    ) {
+                                        Text(
+                                            text = arabicMeaning,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier
+                                                .padding(horizontal = 14.dp, vertical = 6.dp)
+                                                .testTag("review_arabic_meaning_text")
+                                        )
+                                    }
+                                }
+
+                                if (currentCard.definition.isNotBlank() && currentCard.definition != arabicMeaning) {
+                                    Text(
+                                        text = currentCard.definition,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
 
                                 if (currentCard.example.isNotBlank()) {
                                     Surface(
                                         shape = MaterialTheme.shapes.medium,
-                                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                        color = MaterialTheme.colorScheme.surfaceContainer,
+                                        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
@@ -426,7 +512,7 @@ fun ReviewTabContent(
                                             style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             textAlign = TextAlign.Center,
-                                            modifier = Modifier.padding(12.dp)
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                                         )
                                     }
                                 }
@@ -435,7 +521,7 @@ fun ReviewTabContent(
                     }
                 }
 
-                // Rating / Reveal Controls
+                // Apple HIG + Anki FSRS Rating / Reveal Controls
                 AnimatedContent(
                     targetState = flipped,
                     transitionSpec = {
@@ -447,14 +533,25 @@ fun ReviewTabContent(
                     if (!isFlipped) {
                         Button(
                             onClick = { flipped = true },
+                            shape = MaterialTheme.shapes.medium,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 52.dp)
                                 .testTag("flip_card_button")
                         ) {
-                            Text("Reveal answer")
+                            Text(
+                                text = "Reveal answer",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     } else {
+                        val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
+                        val againAccent = if (isDark) Color(0xFFFF6961) else Color(0xFFD70015)
+                        val hardAccent = if (isDark) Color(0xFFFFB340) else Color(0xFFC95100)
+                        val goodAccent = if (isDark) Color(0xFF32D74B) else Color(0xFF1B8A3A)
+                        val easyAccent = if (isDark) Color(0xFF409CFF) else Color(0xFF0066CC)
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -462,8 +559,8 @@ fun ReviewTabContent(
                         ) {
                             ReviewRatingButton(
                                 text = "Again",
-                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                intervalHint = intervalPreviews["Again"] ?: "1m",
+                                accentColor = againAccent,
                                 enabled = !isRatingInProgress,
                                 onClick = { viewModel.rateCard(currentCard, "Again") },
                                 modifier = Modifier
@@ -472,8 +569,8 @@ fun ReviewTabContent(
                             )
                             ReviewRatingButton(
                                 text = "Hard",
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                intervalHint = intervalPreviews["Hard"] ?: "6m",
+                                accentColor = hardAccent,
                                 enabled = !isRatingInProgress,
                                 onClick = { viewModel.rateCard(currentCard, "Hard") },
                                 modifier = Modifier
@@ -482,8 +579,8 @@ fun ReviewTabContent(
                             )
                             ReviewRatingButton(
                                 text = "Good",
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                intervalHint = intervalPreviews["Good"] ?: "1d",
+                                accentColor = goodAccent,
                                 enabled = !isRatingInProgress,
                                 onClick = { viewModel.rateCard(currentCard, "Good") },
                                 modifier = Modifier
@@ -492,8 +589,8 @@ fun ReviewTabContent(
                             )
                             ReviewRatingButton(
                                 text = "Easy",
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                intervalHint = intervalPreviews["Easy"] ?: "4d",
+                                accentColor = easyAccent,
                                 enabled = !isRatingInProgress,
                                 onClick = { viewModel.rateCard(currentCard, "Easy") },
                                 modifier = Modifier
@@ -511,26 +608,40 @@ fun ReviewTabContent(
 @Composable
 private fun ReviewRatingButton(
     text: String,
-    containerColor: Color,
-    contentColor: Color,
+    intervalHint: String,
+    accentColor: Color,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    FilledTonalButton(
+    Surface(
         onClick = onClick,
         enabled = enabled,
-        colors = ButtonDefaults.filledTonalButtonColors(
-            containerColor = containerColor,
-            contentColor = contentColor
-        ),
-        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp),
-        modifier = modifier.heightIn(min = 52.dp)
+        shape = MaterialTheme.shapes.medium,
+        color = accentColor.copy(alpha = 0.14f),
+        contentColor = accentColor,
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.35f)),
+        modifier = modifier.heightIn(min = 56.dp)
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelLarge,
-            maxLines = 1
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            Text(
+                text = intervalHint,
+                style = MaterialTheme.typography.labelSmall,
+                color = accentColor.copy(alpha = 0.85f),
+                maxLines = 1
+            )
+        }
     }
 }

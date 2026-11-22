@@ -33,5 +33,6 @@ data class WordEntity(
     val fsrsState: String? = null,
     val fsrsStep: Int? = null,
     val fsrsLastReview: Long? = null,
-    val tags: String = ""
+    val tags: String = "",
+    val arabicMeaning: String = ""
 )

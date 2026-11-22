@@ -36,12 +36,20 @@ fun LibraryTabContent(
     historyWords: List<WordEntity>,
     bookmarkedWords: List<WordEntity>,
     innerPadding: PaddingValues,
-    onNavigateToSearch: () -> Unit
+    onNavigateToSearch: () -> Unit,
+    onNavigateToReview: () -> Unit = {},
+    initialSubTab: Int = 0
 ) {
-    var selectedSubTab by rememberSaveable { mutableStateOf(0) } // 0: Deck, 1: History
-    val safeSubTab = selectedSubTab.coerceIn(0, 1)
+    var selectedSubTab by rememberSaveable { mutableStateOf(initialSubTab.coerceIn(0, 2)) } // 0: Deck, 1: Courses, 2: History
+    LaunchedEffect(initialSubTab) {
+        if (initialSubTab in 0..2 && initialSubTab != 0) {
+            selectedSubTab = initialSubTab
+        }
+    }
+    val safeSubTab = selectedSubTab.coerceIn(0, 2)
     val filterSearchQuery by viewModel.filterSearchQuery.collectAsStateWithLifecycle()
     val selectedStatusFilter by viewModel.selectedStatusFilter.collectAsStateWithLifecycle()
+    val arabicEnabled by viewModel.arabicTranslationEnabled.collectAsStateWithLifecycle()
 
     val widthSizeClass = LocalWindowWidthSizeClass.current
     val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded
@@ -49,6 +57,7 @@ fun LibraryTabContent(
     var showClearConfirmDialog by rememberSaveable { mutableStateOf(false) }
 
     val isDeck = safeSubTab == 0
+    val isCourses = safeSubTab == 1
 
     if (showClearConfirmDialog) {
         AlertDialog(
@@ -91,7 +100,7 @@ fun LibraryTabContent(
             .padding(innerPadding)
             .background(MaterialTheme.colorScheme.surface)
     ) {
-        // PrimaryTabRow for Deck & History
+        // PrimaryTabRow for Deck, Courses (6 Books + IELTS), & History
         PrimaryTabRow(
             selectedTabIndex = safeSubTab,
             containerColor = MaterialTheme.colorScheme.surface,
@@ -114,6 +123,18 @@ fun LibraryTabContent(
                 onClick = { selectedSubTab = 1 },
                 text = {
                     Text(
+                        text = "Courses",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                modifier = Modifier.testTag("library_subtab_courses")
+            )
+            Tab(
+                selected = safeSubTab == 2,
+                onClick = { selectedSubTab = 2 },
+                text = {
+                    Text(
                         text = "History (${historyWords.size})",
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -121,6 +142,17 @@ fun LibraryTabContent(
                 },
                 modifier = Modifier.testTag("library_subtab_history")
             )
+        }
+
+        if (isCourses) {
+            CoursesExplorerContent(
+                viewModel = viewModel,
+                bookmarkedWords = bookmarkedWords,
+                onNavigateToSearch = onNavigateToSearch,
+                onNavigateToReview = onNavigateToReview,
+                modifier = Modifier.weight(1f)
+            )
+            return@Column
         }
 
         val rawList = if (isDeck) bookmarkedWords else historyWords
@@ -135,6 +167,7 @@ fun LibraryTabContent(
                 val matchesQuery = query.isEmpty() ||
                     wordEntity.word.lowercase().contains(query) ||
                     wordEntity.definition.lowercase().contains(query) ||
+                    wordEntity.arabicMeaning.lowercase().contains(query) ||
                     wordEntity.tags.lowercase().contains(query)
 
                 val matchesStatus = !isDeck || when (selectedStatusFilter) {
@@ -178,12 +211,104 @@ fun LibraryTabContent(
                             .weight(1f),
                         contentAlignment = Alignment.Center
                     ) {
-                        LibraryEmptyState(
-                            isDeck = isDeck,
-                            onLoadSampleData = { viewModel.loadSampleData() }
+                    LibraryEmptyState(
+                        isDeck = isDeck,
+                        onLoadSampleData = { viewModel.loadSampleData() },
+                        onOpenCourses = { selectedSubTab = 1 }
+                    )
+                }
+            } else if (listToDisplay.isEmpty()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "No matching words",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "No words match your search or status filter.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        TextButton(
+                            onClick = {
+                                viewModel.setFilterSearchQuery("")
+                                viewModel.setSelectedStatusFilter(WordStatusFilter.ALL)
+                            }
+                        ) {
+                            Text("Reset filters")
+                        }
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(listToDisplay, key = { it.word }) { wordEntity ->
+                        val isSelected = isExpanded && selectedDetailWord?.word == wordEntity.word
+                        LibraryItemRow(
+                            wordEntity = wordEntity,
+                            isSelected = isSelected,
+                            showArabic = arabicEnabled,
+                            onSelect = {
+                                if (isExpanded) {
+                                    selectedDetailWordKey = wordEntity.word
+                                } else {
+                                    viewModel.selectHistoryWord(wordEntity)
+                                    onNavigateToSearch()
+                                }
+                            },
+                            onDelete = { viewModel.deleteFromHistory(wordEntity) },
+                            onBookmarkToggle = { viewModel.toggleBookmark(wordEntity) },
+                            onResetProgress = { viewModel.resetWordProgress(wordEntity.word) }
                         )
                     }
-                } else if (listToDisplay.isEmpty()) {
+                }
+            }
+        }
+    }
+
+    if (isExpanded) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            listPaneContent(
+                Modifier
+                    .weight(0.46f)
+                    .fillMaxHeight()
+            )
+            Box(
+                modifier = Modifier
+                    .weight(0.54f)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                if (selectedDetailWord != null) {
+                    WordDetailsCard(
+                        wordEntity = selectedDetailWord,
+                        onSpeak = { viewModel.speak(selectedDetailWord.word) },
+                        onBookmarkToggle = { viewModel.toggleBookmark(selectedDetailWord) },
+                        viewModel = viewModel
+                    )
+                } else {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.large,
@@ -192,137 +317,48 @@ fun LibraryTabContent(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(24.dp),
+                                .padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            Icon(
+                                imageVector = Icons.Default.Book,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(36.dp)
+                            )
                             Text(
-                                text = "No matching words",
+                                text = "Select a word to inspect details",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Text(
-                                text = "No words match your search or status filter.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-                            TextButton(
-                                onClick = {
-                                    viewModel.setFilterSearchQuery("")
-                                    viewModel.setSelectedStatusFilter(WordStatusFilter.ALL)
-                                }
-                            ) {
-                                Text("Reset filters")
-                            }
-                        }
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        contentPadding = PaddingValues(bottom = 16.dp)
-                    ) {
-                        items(listToDisplay, key = { it.word }) { wordEntity ->
-                            val isSelected = isExpanded && selectedDetailWord?.word == wordEntity.word
-                            LibraryItemRow(
-                                wordEntity = wordEntity,
-                                isSelected = isSelected,
-                                onSelect = {
-                                    if (isExpanded) {
-                                        selectedDetailWordKey = wordEntity.word
-                                    } else {
-                                        viewModel.selectHistoryWord(wordEntity)
-                                        onNavigateToSearch()
-                                    }
-                                },
-                                onDelete = { viewModel.deleteFromHistory(wordEntity) },
-                                onBookmarkToggle = { viewModel.toggleBookmark(wordEntity) },
-                                onResetProgress = { viewModel.resetWordProgress(wordEntity.word) }
-                            )
                         }
                     }
                 }
             }
         }
-
-        if (isExpanded) {
-            Row(
-                modifier = Modifier
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            listPaneContent(
+                Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                listPaneContent(
-                    Modifier
-                        .weight(0.46f)
-                        .fillMaxHeight()
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(0.54f)
-                        .fillMaxHeight()
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    if (selectedDetailWord != null) {
-                        WordDetailsCard(
-                            wordEntity = selectedDetailWord,
-                            onSpeak = { viewModel.speak(selectedDetailWord.word) },
-                            onBookmarkToggle = { viewModel.toggleBookmark(selectedDetailWord) },
-                            viewModel = viewModel
-                        )
-                    } else {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.large,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(32.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Book,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(36.dp)
-                                )
-                                Text(
-                                    text = "Select a word to inspect details",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                listPaneContent(
-                    Modifier
-                        .fillMaxSize()
-                        .widthIn(max = 680.dp)
-                )
-            }
+                    .widthIn(max = 680.dp)
+            )
         }
     }
+}
 }
 
 @Composable
 private fun LibraryEmptyState(
     isDeck: Boolean,
-    onLoadSampleData: () -> Unit
+    onLoadSampleData: () -> Unit,
+    onOpenCourses: () -> Unit = {}
 ) {
     Surface(
         modifier = Modifier
@@ -359,9 +395,9 @@ private fun LibraryEmptyState(
             )
             Text(
                 text = if (isDeck) {
-                    "Bookmark any looked-up word to save it for offline flashcards and spaced-repetition reviews."
+                    "Add units from the 6 Essential Books & IELTS Courses or bookmark searched words for Anki-style FSRS review."
                 } else {
-                    "Words you look up with Gemini AI appear here automatically."
+                    "Words you look up offline or with AI appear here automatically."
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -369,6 +405,16 @@ private fun LibraryEmptyState(
             )
             if (isDeck) {
                 Button(
+                    onClick = onOpenCourses,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("open_courses_from_deck_empty_button")
+                ) {
+                    Icon(Icons.Default.School, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Browse 6 Books & IELTS")
+                }
+                OutlinedButton(
                     onClick = onLoadSampleData,
                     modifier = Modifier
                         .heightIn(min = 48.dp)
@@ -488,6 +534,7 @@ fun LibraryFilterBar(
 fun LibraryItemRow(
     wordEntity: WordEntity,
     isSelected: Boolean = false,
+    showArabic: Boolean = true,
     onSelect: () -> Unit,
     onDelete: () -> Unit,
     onBookmarkToggle: () -> Unit,
@@ -542,6 +589,15 @@ fun LibraryItemRow(
                     if (wordEntity.isLeech) {
                         LeechBadge(lapses = wordEntity.lapses)
                     }
+                }
+                if (showArabic && wordEntity.arabicMeaning.isNotBlank() && wordEntity.arabicMeaning != wordEntity.definition) {
+                    Text(
+                        text = wordEntity.arabicMeaning,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 Text(
                     text = wordEntity.definition,

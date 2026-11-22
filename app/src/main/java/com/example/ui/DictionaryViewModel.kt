@@ -19,11 +19,19 @@ import com.example.data.WordRepository
 import com.example.data.ReviewLogEntity
 import com.example.data.ReadingSessionEntity
 import com.example.data.MinedSentenceEntity
+import com.example.data.OfflineBook
+import com.example.data.OfflineCurriculumWord
+import com.example.data.OfflineDictionaryDatabase
+import com.example.data.OfflineSearchSuggestion
+import com.example.data.OfflineTopic
+import com.example.data.OfflineUnit
 import io.github.openspacedrepetition.Card
 import io.github.openspacedrepetition.Rating
 import io.github.openspacedrepetition.Scheduler
 import io.github.openspacedrepetition.State
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -346,7 +354,7 @@ class DictionaryViewModel(
     private val _geminiKeyTestStatus = MutableStateFlow<Pair<Boolean, String>?>(null) // Pair(isSuccess, message)
     val geminiKeyTestStatus: StateFlow<Pair<Boolean, String>?> = _geminiKeyTestStatus.asStateFlow()
 
-    private val _arabicTranslationEnabled = MutableStateFlow(false)
+    private val _arabicTranslationEnabled = MutableStateFlow(true)
     val arabicTranslationEnabled: StateFlow<Boolean> = _arabicTranslationEnabled.asStateFlow()
 
     private val _wordArabicTranslations = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -354,6 +362,54 @@ class DictionaryViewModel(
 
     private val _translatingArabicWord = MutableStateFlow<String?>(null)
     val translatingArabicWord: StateFlow<String?> = _translatingArabicWord.asStateFlow()
+
+    private val _enrichingWord = MutableStateFlow<String?>(null)
+    val enrichingWord: StateFlow<String?> = _enrichingWord.asStateFlow()
+
+    private val _searchSuggestions = MutableStateFlow<List<OfflineSearchSuggestion>>(emptyList())
+    val searchSuggestions: StateFlow<List<OfflineSearchSuggestion>> = _searchSuggestions.asStateFlow()
+    private var suggestionsJob: Job? = null
+
+    // Offline 9-book (6 Essential + 3 IELTS) & 26 Life Topics Anki Courses state
+    private val _offlineBooks = MutableStateFlow<List<OfflineBook>>(emptyList())
+    val offlineBooks: StateFlow<List<OfflineBook>> = _offlineBooks.asStateFlow()
+
+    private val _offlineTopics = MutableStateFlow<List<OfflineTopic>>(emptyList())
+    val offlineTopics: StateFlow<List<OfflineTopic>> = _offlineTopics.asStateFlow()
+
+    private val _bookWordLowersMap = MutableStateFlow<Map<Int, Set<String>>>(emptyMap())
+    val bookWordLowersMap: StateFlow<Map<Int, Set<String>>> = _bookWordLowersMap.asStateFlow()
+
+    private val _topicWordLowersMap = MutableStateFlow<Map<String, Set<String>>>(emptyMap())
+    val topicWordLowersMap: StateFlow<Map<String, Set<String>>> = _topicWordLowersMap.asStateFlow()
+
+    private val _selectedCourseBook = MutableStateFlow<OfflineBook?>(null)
+    val selectedCourseBook: StateFlow<OfflineBook?> = _selectedCourseBook.asStateFlow()
+
+    private val _courseUnits = MutableStateFlow<List<OfflineUnit>>(emptyList())
+    val courseUnits: StateFlow<List<OfflineUnit>> = _courseUnits.asStateFlow()
+
+    private val _unitWordLowersMap = MutableStateFlow<Map<Int, Set<String>>>(emptyMap())
+    val unitWordLowersMap: StateFlow<Map<Int, Set<String>>> = _unitWordLowersMap.asStateFlow()
+
+    private val _selectedCourseUnit = MutableStateFlow<OfflineUnit?>(null)
+    val selectedCourseUnit: StateFlow<OfflineUnit?> = _selectedCourseUnit.asStateFlow()
+
+    private val _selectedCourseTopic = MutableStateFlow<OfflineTopic?>(null)
+    val selectedCourseTopic: StateFlow<OfflineTopic?> = _selectedCourseTopic.asStateFlow()
+
+    private val _courseWords = MutableStateFlow<List<OfflineCurriculumWord>>(emptyList())
+    val courseWords: StateFlow<List<OfflineCurriculumWord>> = _courseWords.asStateFlow()
+
+    private val _courseSearchQuery = MutableStateFlow("")
+    val courseSearchQuery: StateFlow<String> = _courseSearchQuery.asStateFlow()
+
+    private val _courseSearchResults = MutableStateFlow<List<OfflineCurriculumWord>>(emptyList())
+    val courseSearchResults: StateFlow<List<OfflineCurriculumWord>> = _courseSearchResults.asStateFlow()
+    private var courseSearchJob: Job? = null
+
+    private val _isAddingCourseWords = MutableStateFlow(false)
+    val isAddingCourseWords: StateFlow<Boolean> = _isAddingCourseWords.asStateFlow()
 
     private val _isBackupBusy = MutableStateFlow(false)
     val isBackupBusy: StateFlow<Boolean> = _isBackupBusy.asStateFlow()
@@ -898,9 +954,41 @@ class DictionaryViewModel(
         }
     }
 
+    fun ensureOfflineArabicLoaded(wordEntity: WordEntity) {
+        val key = wordEntity.word.trim().lowercase()
+        if (key.isBlank()) return
+        if (wordEntity.arabicMeaning.isNotBlank()) {
+            if (_wordArabicTranslations.value[key] != wordEntity.arabicMeaning) {
+                _wordArabicTranslations.value = _wordArabicTranslations.value + (key to wordEntity.arabicMeaning)
+            }
+            return
+        }
+        if (_wordArabicTranslations.value.containsKey(key)) return
+
+        val prefs = getApplication<Application>().getSharedPreferences("arabic_translations", android.content.Context.MODE_PRIVATE)
+        val cached = prefs.getString("ar_$key", null)
+        if (!cached.isNullOrBlank()) {
+            _wordArabicTranslations.value = _wordArabicTranslations.value + (key to cached)
+            return
+        }
+
+        viewModelScope.launch {
+            val offlineAr = repository.lookupOfflineArabicTranslation(key)
+            if (!offlineAr.isNullOrBlank()) {
+                prefs.edit().putString("ar_$key", offlineAr).apply()
+                _wordArabicTranslations.value = _wordArabicTranslations.value + (key to offlineAr)
+                repository.updateArabicMeaning(key, offlineAr)
+            }
+        }
+    }
+
     fun translateWordToArabic(wordEntity: WordEntity) {
         val key = wordEntity.word.trim().lowercase()
         if (key.isBlank()) return
+        if (wordEntity.arabicMeaning.isNotBlank()) {
+            _wordArabicTranslations.value = _wordArabicTranslations.value + (key to wordEntity.arabicMeaning)
+            return
+        }
         if (_wordArabicTranslations.value.containsKey(key)) return
 
         val prefs = getApplication<Application>().getSharedPreferences("arabic_translations", android.content.Context.MODE_PRIVATE)
@@ -927,6 +1015,197 @@ class DictionaryViewModel(
                 _snackbarMessage.tryEmit(err.message ?: "Failed to translate to Arabic")
             }
         }
+    }
+
+    fun enrichWordWithAi(wordEntity: WordEntity) {
+        val cleanWord = wordEntity.word.trim().lowercase()
+        if (cleanWord.isBlank() || _enrichingWord.value != null) return
+
+        val geminiKeys = getOrderedGeminiMeaningKeys()
+        val openRouterKey = _openRouterApiKey.value.trim()
+        if (geminiKeys.isEmpty() && openRouterKey.isBlank()) {
+            _snackbarMessage.tryEmit("Add a Gemini or OpenRouter API key in Settings to enrich words with AI.")
+            return
+        }
+
+        _enrichingWord.value = cleanWord
+        viewModelScope.launch {
+            val result = repository.searchAndFetchWord(
+                word = cleanWord,
+                aiVisualizationsEnabled = _aiVisualizationsEnabled.value,
+                imageSource = "web",
+                openRouterApiKey = openRouterKey,
+                pexelsQuerySource = _pexelsQuerySource.value,
+                geminiApiKeys = geminiKeys,
+                geminiModel = getEffectiveGeminiMeaningModel(),
+                pexelsApiKey = _pexelsApiKey.value.trim(),
+                forceAiEnrich = true
+            )
+            _enrichingWord.value = null
+            refreshUsageStats()
+            result.onSuccess { enriched ->
+                val current = _searchUiState.value
+                if (current is SearchUiState.Success && current.word.word.equals(enriched.word, ignoreCase = true)) {
+                    _searchUiState.value = SearchUiState.Success(enriched)
+                }
+                _snackbarMessage.tryEmit("Enriched \"${enriched.word}\" with AI details")
+            }.onFailure { err ->
+                _snackbarMessage.tryEmit(err.message ?: "AI enrichment failed")
+            }
+        }
+    }
+
+    // --- Offline 9-Book (6 Essential + 3 IELTS) & 26 Life Topics Anki Courses ---
+
+    fun loadOfflineCatalog() {
+        viewModelScope.launch {
+            _offlineBooks.value = repository.getOfflineBooks()
+            _offlineTopics.value = repository.getOfflineTopics()
+            _bookWordLowersMap.value = repository.getOfflineBookWordLowersMap()
+            _topicWordLowersMap.value = repository.getOfflineTopicWordLowersMap()
+        }
+    }
+
+    fun selectCourseBook(book: OfflineBook?) {
+        _selectedCourseBook.value = book
+        _selectedCourseUnit.value = null
+        _selectedCourseTopic.value = null
+        _courseWords.value = emptyList()
+        if (book == null) {
+            _courseUnits.value = emptyList()
+            _unitWordLowersMap.value = emptyMap()
+            return
+        }
+        viewModelScope.launch {
+            _courseUnits.value = repository.getOfflineUnitsForBook(book.bookNum)
+            _unitWordLowersMap.value = repository.getOfflineUnitWordLowersMap(book.bookNum)
+        }
+    }
+
+    fun selectCourseUnit(unit: OfflineUnit?) {
+        _selectedCourseUnit.value = unit
+        if (unit == null) {
+            _courseWords.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            _courseWords.value = repository.getOfflineWordsForUnit(unit.bookNum, unit.unitNum)
+        }
+    }
+
+    fun selectCourseTopic(topic: OfflineTopic?) {
+        _selectedCourseTopic.value = topic
+        _selectedCourseBook.value = null
+        _selectedCourseUnit.value = null
+        if (topic == null) {
+            _courseWords.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            _courseWords.value = repository.getOfflineWordsForTopic(topic.id)
+        }
+    }
+
+    fun setCourseSearchQuery(query: String, category: String? = null) {
+        _courseSearchQuery.value = query
+        courseSearchJob?.cancel()
+        val clean = query.trim()
+        if (clean.length < 2) {
+            _courseSearchResults.value = emptyList()
+            return
+        }
+        courseSearchJob = viewModelScope.launch {
+            delay(150)
+            _courseSearchResults.value = repository.searchOfflineCurriculumWords(clean, category, limit = 60)
+        }
+    }
+
+    fun openCourseWord(
+        item: OfflineCurriculumWord,
+        extraTags: List<String> = emptyList(),
+        onOpened: (WordEntity) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val entity = repository.openCurriculumWord(item, extraTags)
+            _searchQuery.value = entity.word
+            _searchSuggestions.value = emptyList()
+            _searchUiState.value = SearchUiState.Success(entity)
+            if (entity.arabicMeaning.isNotBlank()) {
+                _wordArabicTranslations.value = _wordArabicTranslations.value + (entity.word.lowercase() to entity.arabicMeaning)
+            }
+            onOpened(entity)
+        }
+    }
+
+    fun toggleCourseWordInDeck(
+        item: OfflineCurriculumWord,
+        isCurrentlyInDeck: Boolean,
+        extraTags: List<String> = emptyList()
+    ) {
+        viewModelScope.launch {
+            if (isCurrentlyInDeck) {
+                repository.toggleBookmark(item.word.trim().lowercase(), false)
+                _reviewQueue.value = _reviewQueue.value.filter { !it.word.equals(item.word.trim(), ignoreCase = true) }
+                refreshStats()
+                _snackbarMessage.tryEmit("Removed \"${item.word}\" from Deck")
+            } else {
+                repository.addCurriculumWordsToDeck(listOf(item), extraTags)
+                refreshStats()
+                _snackbarMessage.tryEmit("Added \"${item.word}\" to Anki FSRS Deck")
+            }
+        }
+    }
+
+    /**
+     * Anki-style daily batch import: adds the next [batchSize] unbookmarked words from [words]
+     * into the user's Personal Deck with dueDate = today so FSRS schedules them right away.
+     */
+    fun addNextBatchToDeck(
+        words: List<OfflineCurriculumWord>,
+        batchSize: Int,
+        extraTags: List<String> = emptyList(),
+        label: String
+    ) {
+        if (_isAddingCourseWords.value) return
+        val existingDeckWords = bookmarksState.value.map { it.word.lowercase() }.toSet()
+        val unadded = words.filter { it.word.trim().lowercase() !in existingDeckWords }
+        if (unadded.isEmpty()) {
+            _snackbarMessage.tryEmit("All words in $label are already in your Deck")
+            return
+        }
+        val batch = unadded.take(batchSize)
+        _isAddingCourseWords.value = true
+        viewModelScope.launch {
+            val added = repository.addCurriculumWordsToDeck(batch, extraTags)
+            _isAddingCourseWords.value = false
+            refreshStats()
+            _snackbarMessage.tryEmit("Added $added new cards from $label to your FSRS Deck")
+        }
+    }
+
+    fun addAllWordsToDeck(
+        words: List<OfflineCurriculumWord>,
+        extraTags: List<String> = emptyList(),
+        label: String
+    ) {
+        if (_isAddingCourseWords.value) return
+        if (words.isEmpty()) return
+        _isAddingCourseWords.value = true
+        viewModelScope.launch {
+            val added = repository.addCurriculumWordsToDeck(words, extraTags)
+            _isAddingCourseWords.value = false
+            refreshStats()
+            if (added > 0) {
+                _snackbarMessage.tryEmit("Added $added new cards from $label to your FSRS Deck")
+            } else {
+                _snackbarMessage.tryEmit("All words in $label are already in your Deck")
+            }
+        }
+    }
+
+    fun studyDeckTagInReview(deckTag: String) {
+        setSelectedReviewDeck(deckTag)
+        startReviewSession(deckTag)
     }
 
     fun exportBackupJson(uri: android.net.Uri) {
@@ -1760,6 +2039,77 @@ class DictionaryViewModel(
         }
     }
 
+    /**
+     * Computes Anki-style next-interval preview labels (e.g. "1m", "10m", "1d", "4d")
+     * for Again / Hard / Good / Easy using the currently active FSRS or SM-2 scheduler.
+     */
+    fun previewReviewIntervals(word: WordEntity): Map<String, String> {
+        val ratings = listOf("Again", "Hard", "Good", "Easy")
+        if (_srsAlgorithm.value.equals("fsrs", ignoreCase = true)) {
+            return try {
+                val retentionFraction = (_targetRetention.value.toDouble() / 100.0).coerceIn(0.80, 0.97)
+                val scheduler = Scheduler.builder()
+                    .desiredRetention(retentionFraction)
+                    .build()
+                val baseCard = if (word.fsrsStability != null && word.fsrsDifficulty != null) {
+                    val builder = Card.builder()
+                        .stability(word.fsrsStability)
+                        .difficulty(word.fsrsDifficulty)
+                    word.fsrsDue?.let { builder.due(java.time.Instant.ofEpochMilli(it)) }
+                    word.fsrsState?.let { st -> runCatching { State.valueOf(st) }.getOrNull()?.let { builder.state(it) } }
+                    word.fsrsStep?.let { builder.step(it) }
+                    word.fsrsLastReview?.let { builder.lastReview(java.time.Instant.ofEpochMilli(it)) }
+                    builder.build()
+                } else {
+                    Card.builder().build()
+                }
+                val now = java.time.Instant.now()
+                ratings.associateWith { label ->
+                    val fsrsRating = when (label) {
+                        "Again" -> Rating.AGAIN
+                        "Hard" -> Rating.HARD
+                        "Good" -> Rating.GOOD
+                        else -> Rating.EASY
+                    }
+                    val due = scheduler.reviewCard(baseCard, fsrsRating, now).card().due ?: now
+                    val minutes = maxOf(1L, java.time.Duration.between(now, due).toMinutes())
+                    formatIntervalMinutes(minutes)
+                }
+            } catch (_: Exception) {
+                mapOf("Again" to "1m", "Hard" to "6m", "Good" to "10m", "Easy" to "4d")
+            }
+        } else {
+            val sEase = _startingEase.value
+            val eBonus = _easyBonus.value
+            val iMod = _intervalModifier.value
+            val hMult = _hardIntervalMultiplier.value
+            val ease = if (word.repetitions == 0) sEase else word.easeFactor
+            val hardDays = if (word.repetitions == 0) 1 else maxOf(1, kotlin.math.round(word.interval * hMult * iMod).toInt())
+            val goodDays = when (word.repetitions) {
+                0 -> 1
+                1 -> maxOf(1, kotlin.math.round(6 * iMod).toInt())
+                else -> maxOf(1, kotlin.math.round(word.interval * ease * iMod).toInt())
+            }
+            val easyDays = maxOf(goodDays + 1, kotlin.math.round(goodDays * eBonus).toInt())
+            return mapOf(
+                "Again" to "1m",
+                "Hard" to formatIntervalMinutes(hardDays * 1440L),
+                "Good" to formatIntervalMinutes(goodDays * 1440L),
+                "Easy" to formatIntervalMinutes(easyDays * 1440L)
+            )
+        }
+    }
+
+    private fun formatIntervalMinutes(minutes: Long): String {
+        return when {
+            minutes < 60L -> "${minutes}m"
+            minutes < 1440L -> "${minutes / 60L}h"
+            minutes < 43200L -> "${(minutes + 720L) / 1440L}d"
+            minutes < 525600L -> "${String.format(Locale.US, "%.1f", minutes / 43200.0).removeSuffix(".0")}mo"
+            else -> "${String.format(Locale.US, "%.1f", minutes / 525600.0).removeSuffix(".0")}y"
+        }
+    }
+
     fun rateCard(word: WordEntity, rating: String) {
         if (_isRatingInProgress.value) return
         _isRatingInProgress.value = true
@@ -2076,6 +2426,16 @@ class DictionaryViewModel(
 
     fun onSearchQueryChanged(query: String) {
         _searchQuery.value = query
+        suggestionsJob?.cancel()
+        val trimmed = query.trim()
+        if (trimmed.length < 2) {
+            _searchSuggestions.value = emptyList()
+            return
+        }
+        suggestionsJob = viewModelScope.launch {
+            delay(120)
+            _searchSuggestions.value = repository.searchOfflineSuggestions(trimmed, limit = 8)
+        }
     }
 
     fun updateTtsSettings() {
@@ -2906,19 +3266,22 @@ class DictionaryViewModel(
         val cleanWord = word.trim()
         if (cleanWord.isEmpty()) return
 
+        suggestionsJob?.cancel()
+        _searchSuggestions.value = emptyList()
         _searchQuery.value = cleanWord
         _searchUiState.value = SearchUiState.Loading
 
         viewModelScope.launch {
             val localCached = repository.getLocalWord(cleanWord)
-            if (localCached == null && isWordApiThrottled()) {
+            val isOfflineAvailable = localCached != null || repository.hasOfflineCurriculumOrDictWord(cleanWord)
+            if (!isOfflineAvailable && isWordApiThrottled()) {
                 val remainingSec = getWordApiCooldownRemainingSec()
                 _searchUiState.value = SearchUiState.Error(
                     "Cooldown active — please wait ${remainingSec}s before the next AI word request."
                 )
                 return@launch
             }
-            if (localCached == null) {
+            if (!isOfflineAvailable) {
                 lastWordApiNetworkCallTimestamp = System.currentTimeMillis()
             }
 
@@ -2939,6 +3302,10 @@ class DictionaryViewModel(
             )
             refreshUsageStats()
             result.onSuccess { wordEntity ->
+                if (wordEntity.arabicMeaning.isNotBlank()) {
+                    val key = wordEntity.word.trim().lowercase()
+                    _wordArabicTranslations.value = _wordArabicTranslations.value + (key to wordEntity.arabicMeaning)
+                }
                 _searchUiState.value = SearchUiState.Success(wordEntity)
             }.onFailure { exception ->
                 _searchUiState.value = SearchUiState.Error(exception.message ?: "Failed to find word details.")
@@ -3008,6 +3375,8 @@ class DictionaryViewModel(
     }
 
     fun clearSearchState() {
+        suggestionsJob?.cancel()
+        _searchSuggestions.value = emptyList()
         _searchUiState.value = SearchUiState.Idle
         _searchQuery.value = ""
     }
@@ -3567,7 +3936,7 @@ class DictionaryViewModel(
         _selectedThemeColor.value = sharedPrefs.getString("selected_theme_color", "purple") ?: "purple"
         _themeMode.value = sharedPrefs.getString("theme_mode", "system") ?: "system"
         _dynamicColorEnabled.value = sharedPrefs.getBoolean("dynamic_color_enabled", true)
-        _arabicTranslationEnabled.value = sharedPrefs.getBoolean("arabic_translation_enabled", false)
+        _arabicTranslationEnabled.value = sharedPrefs.getBoolean("arabic_translation_enabled", true)
         _useSeparateTtsKeys.value = if (sharedPrefs.contains("use_separate_tts_keys")) {
             sharedPrefs.getBoolean("use_separate_tts_keys", false)
         } else {
@@ -3600,6 +3969,7 @@ class DictionaryViewModel(
         }
 
         refreshStats()
+        loadOfflineCatalog()
 
         viewModelScope.launch {
             val isSentencesSeeded = sharedPrefs.getBoolean("is_sentences_seeded_v1", false)

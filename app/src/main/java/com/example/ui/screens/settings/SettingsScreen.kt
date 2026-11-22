@@ -767,8 +767,8 @@ fun SettingsScreen(
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                             SettingsToggleRow(
-                                title = "Arabic translation button",
-                                subtitle = "Show an optional Arabic meaning button on word cards",
+                                title = "Arabic meanings (Offline + AI)",
+                                subtitle = "Show Arabic meanings automatically on word cards, flashcards & FSRS review",
                                 checked = arabicTranslationEnabled,
                                 onCheckedChange = { viewModel.setArabicTranslationEnabled(it) },
                                 switchTag = "arabic_translation_switch"

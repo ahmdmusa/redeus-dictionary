@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
                     dynamicColor = dynamicColorEnabled
                 ) {
                     var selectedTab by rememberSaveable { mutableStateOf(0) } // 0: Search, 1: Library, 2: Reading, 3: Cards, 4: Review
+                    var libraryInitialSubTab by rememberSaveable { mutableStateOf(0) }
                     var showSettings by rememberSaveable { mutableStateOf(false) }
                     var settingsInitialTab by rememberSaveable { mutableStateOf(0) }
 
@@ -162,7 +163,9 @@ class MainActivity : ComponentActivity() {
                                     historyWords = historyWords,
                                     bookmarkedWords = bookmarkedWords,
                                     innerPadding = innerPadding,
-                                    onNavigateToSearch = { selectedTab = 0 }
+                                    onNavigateToSearch = { selectedTab = 0 },
+                                    onNavigateToReview = { selectedTab = 4 },
+                                    initialSubTab = libraryInitialSubTab
                                 )
                                 2 -> DailyReadingTabContent(
                                     viewModel = viewModel,
@@ -176,7 +179,11 @@ class MainActivity : ComponentActivity() {
                                 )
                                 4 -> ReviewTabContent(
                                     viewModel = viewModel,
-                                    innerPadding = innerPadding
+                                    innerPadding = innerPadding,
+                                    onNavigateToCourses = {
+                                        libraryInitialSubTab = 1
+                                        selectedTab = 1
+                                    }
                                 )
                             }
                         }

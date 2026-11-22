@@ -340,6 +340,13 @@ fun FlashcardItem(
                 }
             }
         } else {
+            val arabicEnabled by viewModel.arabicTranslationEnabled.collectAsStateWithLifecycle()
+            val wordArabicTranslations by viewModel.wordArabicTranslations.collectAsStateWithLifecycle()
+            LaunchedEffect(word.word, arabicEnabled) {
+                if (arabicEnabled) {
+                    viewModel.ensureOfflineArabicLoaded(word)
+                }
+            }
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
@@ -347,16 +354,20 @@ fun FlashcardItem(
                         rotationY = if (reducedMotion) 0f else 180f
                     },
                 shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                tonalElevation = 2.dp
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(
+                    0.5.dp,
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+                ),
+                tonalElevation = 0.dp
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(20.dp),
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)
+                    verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)
                 ) {
                     if (word.imagePrompt.isNotEmpty()) {
                         val context = LocalContext.current
@@ -364,7 +375,7 @@ fun FlashcardItem(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .aspectRatio(4f / 3f)
+                                .height(164.dp)
                                 .clip(MaterialTheme.shapes.medium)
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         ) {
@@ -379,7 +390,7 @@ fun FlashcardItem(
                                 modifier = Modifier.fillMaxSize(),
                                 loading = {
                                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                                     }
                                 },
                                 error = {
@@ -401,6 +412,7 @@ fun FlashcardItem(
                             TryAnotherPhotoButton(
                                 word = word,
                                 viewModel = viewModel,
+                                compact = true,
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(8.dp)
@@ -419,25 +431,46 @@ fun FlashcardItem(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = displayPhonetic,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        if (displayPhonetic.isNotBlank()) {
+                            Text(
+                                text = displayPhonetic,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         FilledTonalIconButton(
                             onClick = { viewModel.speak(word.word) },
                             modifier = Modifier
-                                .size(48.dp)
+                                .size(40.dp)
                                 .testTag("flashcard_speak_back_button")
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = "Pronounce word"
+                                contentDescription = "Pronounce word",
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
 
-                    if (word.definition.isNotBlank()) {
+                    val arabicMeaning = word.arabicMeaning.ifBlank {
+                        wordArabicTranslations[word.word.trim().lowercase()] ?: ""
+                    }
+                    if (arabicEnabled && arabicMeaning.isNotBlank()) {
+                        Surface(
+                            shape = MaterialTheme.shapes.small,
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ) {
+                            Text(
+                                text = arabicMeaning,
+                                style = MaterialTheme.typography.titleMedium,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+
+                    if (word.definition.isNotBlank() && word.definition != arabicMeaning) {
                         Text(
                             text = word.definition,
                             style = MaterialTheme.typography.bodyLarge,
@@ -449,7 +482,11 @@ fun FlashcardItem(
                     if (word.example.isNotBlank()) {
                         Surface(
                             shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                            border = androidx.compose.foundation.BorderStroke(
+                                0.5.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
@@ -457,7 +494,7 @@ fun FlashcardItem(
                                 style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(12.dp)
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
                             )
                         }
                     }

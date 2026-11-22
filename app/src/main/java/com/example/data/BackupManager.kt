@@ -62,6 +62,7 @@ object BackupManager {
                                 if (w.fsrsStep != null) put("fsrsStep", w.fsrsStep)
                                 if (w.fsrsLastReview != null) put("fsrsLastReview", w.fsrsLastReview)
                                 put("tags", w.tags)
+                                put("arabicMeaning", w.arabicMeaning)
                             })
                         }
                     })
@@ -167,7 +168,8 @@ object BackupManager {
                             fsrsState = if (obj.has("fsrsState") && !obj.isNull("fsrsState")) obj.optString("fsrsState") else null,
                             fsrsStep = if (obj.has("fsrsStep") && !obj.isNull("fsrsStep")) obj.optInt("fsrsStep") else null,
                             fsrsLastReview = if (obj.has("fsrsLastReview") && !obj.isNull("fsrsLastReview")) obj.optLong("fsrsLastReview") else null,
-                            tags = obj.optString("tags", "")
+                            tags = obj.optString("tags", ""),
+                            arabicMeaning = obj.optString("arabicMeaning", "")
                         )
                         wordDao.insertWord(entity)
                         wordsImported++

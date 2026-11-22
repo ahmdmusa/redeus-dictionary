@@ -4,10 +4,12 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -29,6 +31,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -39,6 +42,7 @@ import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.example.R
+import com.example.data.OfflineSearchSuggestion
 import com.example.data.WordEntity
 import com.example.ui.*
 import com.example.ui.components.*
@@ -89,6 +93,7 @@ private fun CompactMediumSearchLayout(
     val scrollState = rememberScrollState()
     val geminiKeys by viewModel.geminiMeaningApiKeys.collectAsStateWithLifecycle()
     val openRouterKey by viewModel.openRouterApiKey.collectAsStateWithLifecycle()
+    val suggestions by viewModel.searchSuggestions.collectAsStateWithLifecycle()
     val needsApiSetup = geminiKeys.none { it.trim().isNotBlank() } && openRouterKey.trim().isBlank()
 
     Column(
@@ -97,15 +102,15 @@ private fun CompactMediumSearchLayout(
             .padding(innerPadding)
             .verticalScroll(scrollState)
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 16.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 680.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             HeroBannerSection()
             if (needsApiSetup) {
@@ -113,9 +118,11 @@ private fun CompactMediumSearchLayout(
             }
             SearchInputSection(
                 searchQuery = searchQuery,
+                suggestions = suggestions,
                 onQueryChange = { viewModel.onSearchQueryChanged(it) },
                 onClear = { viewModel.clearSearchState() },
-                onSubmit = { viewModel.performSearch(searchQuery) }
+                onSubmit = { viewModel.performSearch(searchQuery) },
+                onSelectSuggestion = { viewModel.performSearch(it.word) }
             )
             SearchResultSection(
                 viewModel = viewModel,
@@ -137,6 +144,7 @@ private fun ExpandedSearchLayout(
 ) {
     val geminiKeys by viewModel.geminiMeaningApiKeys.collectAsStateWithLifecycle()
     val openRouterKey by viewModel.openRouterApiKey.collectAsStateWithLifecycle()
+    val suggestions by viewModel.searchSuggestions.collectAsStateWithLifecycle()
     val needsApiSetup = geminiKeys.none { it.trim().isNotBlank() } && openRouterKey.trim().isBlank()
 
     Row(
@@ -153,7 +161,7 @@ private fun ExpandedSearchLayout(
                 .weight(0.42f)
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             HeroBannerSection()
             if (needsApiSetup) {
@@ -161,9 +169,11 @@ private fun ExpandedSearchLayout(
             }
             SearchInputSection(
                 searchQuery = searchQuery,
+                suggestions = suggestions,
                 onQueryChange = { viewModel.onSearchQueryChanged(it) },
                 onClear = { viewModel.clearSearchState() },
-                onSubmit = { viewModel.performSearch(searchQuery) }
+                onSubmit = { viewModel.performSearch(searchQuery) },
+                onSelectSuggestion = { viewModel.performSearch(it.word) }
             )
             DiscoverySuggestions { selectedWord ->
                 viewModel.performSearch(selectedWord)
@@ -182,6 +192,7 @@ private fun ExpandedSearchLayout(
                 Surface(
                     shape = MaterialTheme.shapes.large,
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
@@ -198,13 +209,13 @@ private fun ExpandedSearchLayout(
                             modifier = Modifier.size(40.dp)
                         )
                         Text(
-                            text = "Look up any English word",
+                            text = "Look up any English or Arabic word",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center
                         )
                         Text(
-                            text = "Search a word or select a suggestion on the left to view definitions, phonetics, examples, and memory aids.",
+                            text = "Search offline across 6 Essential Books, 3 IELTS Books (9,591 words) and 87K Arabic definitions — or enrich any word with AI.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -229,47 +240,41 @@ private fun ApiSetupPromptCard(onOpenApiSettings: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .testTag("api_setup_prompt_card"),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Key,
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp)
+            Icon(
+                imageVector = Icons.Default.OfflinePin,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Offline Dictionary Ready",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Add your free Gemini API key to get started",
-                    style = MaterialTheme.typography.titleSmall
+                    text = "9 Books (Essential + IELTS) & 87K Arabic • Add Gemini key optionally for AI",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Text(
-                text = "One Gemini key powers definitions, Daily Reading, and AI pronunciation.",
-                style = MaterialTheme.typography.bodySmall
-            )
-            FilledTonalButton(
+            TextButton(
                 onClick = onOpenApiSettings,
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .testTag("open_api_settings_button")
+                modifier = Modifier.testTag("open_api_settings_button")
             ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Open API settings")
+                Text("AI Key")
             }
         }
     }
@@ -278,15 +283,17 @@ private fun ApiSetupPromptCard(onOpenApiSettings: () -> Unit) {
 @Composable
 private fun SearchInputSection(
     searchQuery: String,
+    suggestions: List<OfflineSearchSuggestion> = emptyList(),
     onQueryChange: (String) -> Unit,
     onClear: () -> Unit,
-    onSubmit: () -> Unit
+    onSubmit: () -> Unit,
+    onSelectSuggestion: (OfflineSearchSuggestion) -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
 
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         OutlinedTextField(
             value = searchQuery,
@@ -294,10 +301,10 @@ private fun SearchInputSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .testTag("search_word_input"),
-            label = { Text("Word to define") },
+            label = { Text("Search English or Arabic") },
             placeholder = {
                 Text(
-                    text = "e.g. resilient, serendipity...",
+                    text = "e.g. aquatic, resilient, يوافق...",
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -336,9 +343,83 @@ private fun SearchInputSection(
             shape = MaterialTheme.shapes.extraLarge,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
             )
         )
+
+        if (suggestions.isNotEmpty()) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("offline_suggestions_card"),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    suggestions.forEachIndexed { idx, suggestion ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    focusManager.clearFocus()
+                                    onSelectSuggestion(suggestion)
+                                }
+                                .padding(horizontal = 14.dp, vertical = 10.dp)
+                                .testTag("offline_suggestion_${suggestion.word.lowercase()}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = suggestion.word.replaceFirstChar { it.uppercase() },
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (suggestion.translationAr.isNotBlank()) {
+                                    Text(
+                                        text = suggestion.translationAr,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Surface(
+                                shape = MaterialTheme.shapes.extraSmall,
+                                color = if (suggestion.isCurriculum) {
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerHighest
+                                },
+                                contentColor = if (suggestion.isCurriculum) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                }
+                            ) {
+                                Text(
+                                    text = suggestion.badge,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+                        if (idx < suggestions.lastIndex) {
+                            HorizontalDivider(
+                                thickness = 0.5.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         Button(
             onClick = {
@@ -349,16 +430,16 @@ private fun SearchInputSection(
                 .fillMaxWidth()
                 .heightIn(min = 48.dp)
                 .testTag("search_word_button"),
-            shape = MaterialTheme.shapes.large
+            shape = MaterialTheme.shapes.medium
         ) {
             Icon(
-                imageVector = Icons.Default.AutoAwesome,
+                imageVector = Icons.Default.Search,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "Define word with AI",
+                text = "Look up word",
                 style = MaterialTheme.typography.labelLarge
             )
         }
@@ -392,7 +473,8 @@ private fun SearchResultSection(
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                 ) {
                     Column(
                         modifier = Modifier
@@ -403,13 +485,13 @@ private fun SearchResultSection(
                     ) {
                         CircularProgressIndicator()
                         Text(
-                            text = "Analyzing word with Gemini AI...",
+                            text = "Looking up word...",
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center
                         )
                         Text(
-                            text = "Fetching definition, phonetics, examples, and memory aid",
+                            text = "Checking offline 9-book & IELTS database first",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -447,12 +529,12 @@ fun HeroBannerSection() {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(18.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Surface(
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(46.dp),
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceContainerLowest,
                 contentColor = MaterialTheme.colorScheme.primary
@@ -461,7 +543,7 @@ fun HeroBannerSection() {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_launcher_foreground),
                         contentDescription = null,
-                        modifier = Modifier.size(34.dp)
+                        modifier = Modifier.size(32.dp)
                     )
                 }
             }
@@ -469,11 +551,12 @@ fun HeroBannerSection() {
                 Text(
                     text = "Redeus Dictionary",
                     style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "AI-powered definitions, pronunciation & spaced repetition",
+                    text = "6 Essential Books • 3 IELTS Books • 87K Arabic • FSRS",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                 )
@@ -522,7 +605,8 @@ fun DiscoverySuggestions(onSelectWord: (String) -> Unit) {
 fun TryAnotherPhotoButton(
     word: WordEntity,
     viewModel: DictionaryViewModel,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    compact: Boolean = false
 ) {
     val imageSource by viewModel.imageSourcePreference.collectAsStateWithLifecycle()
     if (imageSource != "web") return
@@ -530,13 +614,46 @@ fun TryAnotherPhotoButton(
     val cyclingWord by viewModel.cyclingPhotoWord.collectAsStateWithLifecycle()
     val isCycling = cyclingWord?.equals(word.word, ignoreCase = true) == true
 
+    if (compact) {
+        Surface(
+            onClick = { viewModel.cycleNextPhoto(word) },
+            enabled = !isCycling,
+            shape = CircleShape,
+            color = Color.Black.copy(alpha = 0.52f),
+            contentColor = Color.White,
+            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.28f)),
+            modifier = modifier
+                .size(34.dp)
+                .testTag("try_another_photo_button_${word.word}")
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (isCycling) {
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier
+                            .size(14.dp)
+                            .testTag("try_another_photo_spinner"),
+                        strokeWidth = 1.8.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Try another photo",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+        return
+    }
+
     Surface(
         onClick = { viewModel.cycleNextPhoto(word) },
         enabled = !isCycling,
         shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f),
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        tonalElevation = 2.dp,
+        color = Color.Black.copy(alpha = 0.55f),
+        contentColor = Color.White,
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.25f)),
         modifier = modifier.testTag("try_another_photo_button_${word.word}")
     ) {
         Row(
@@ -546,6 +663,7 @@ fun TryAnotherPhotoButton(
         ) {
             if (isCycling) {
                 CircularProgressIndicator(
+                    color = Color.White,
                     modifier = Modifier
                         .size(13.dp)
                         .testTag("try_another_photo_spinner"),
@@ -562,7 +680,7 @@ fun TryAnotherPhotoButton(
                     modifier = Modifier.size(14.dp)
                 )
                 Text(
-                    text = "Try another photo",
+                    text = "Change photo",
                     style = MaterialTheme.typography.labelSmall
                 )
             }
@@ -733,17 +851,18 @@ fun WordDetailsCard(
             }
         }
 
-        // 2. Definition Section
+        // 2. Definition Section + Offline Arabic Meaning + Optional AI Enrichment
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerLow
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -758,46 +877,70 @@ fun WordDetailsCard(
                     Text(
                         text = "Definition",
                         style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                Text(
-                    text = wordEntity.definition,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
 
                 val arabicEnabled by viewModel.arabicTranslationEnabled.collectAsStateWithLifecycle()
-                if (arabicEnabled) {
-                    val translations by viewModel.wordArabicTranslations.collectAsStateWithLifecycle()
-                    val translatingWord by viewModel.translatingArabicWord.collectAsStateWithLifecycle()
-                    val wordKey = wordEntity.word.trim().lowercase()
-                    val arabicText = translations[wordKey]
-                    val isTranslating = translatingWord == wordKey
+                val translations by viewModel.wordArabicTranslations.collectAsStateWithLifecycle()
+                val translatingWord by viewModel.translatingArabicWord.collectAsStateWithLifecycle()
+                val enrichingWord by viewModel.enrichingWord.collectAsStateWithLifecycle()
+                val wordKey = wordEntity.word.trim().lowercase()
+                val arabicText = wordEntity.arabicMeaning.ifBlank { translations[wordKey] ?: "" }
+                val isTranslating = translatingWord == wordKey
+                val isEnriching = enrichingWord == wordKey
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    if (!arabicText.isNullOrBlank()) {
+                LaunchedEffect(wordKey, arabicEnabled) {
+                    if (arabicEnabled && arabicText.isBlank()) {
+                        viewModel.ensureOfflineArabicLoaded(wordEntity)
+                    }
+                }
+
+                if (wordEntity.definition.isNotBlank() && wordEntity.definition != arabicText) {
+                    Text(
+                        text = wordEntity.definition,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                if (arabicEnabled) {
+                    if (arabicText.isNotBlank()) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                         ) {
-                            Text(
-                                text = arabicText,
-                                style = MaterialTheme.typography.bodyLarge,
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp)
-                                    .testTag("arabic_translation_text")
-                            )
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Translate,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = arabicText,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("arabic_translation_text")
+                                )
+                            }
                         }
                     } else {
                         FilledTonalButton(
                             onClick = { viewModel.translateWordToArabic(wordEntity) },
                             enabled = !isTranslating,
                             modifier = Modifier
-                                .heightIn(min = 48.dp)
+                                .heightIn(min = 44.dp)
                                 .testTag("show_arabic_meaning_button")
                         ) {
                             if (isTranslating) {
@@ -816,6 +959,43 @@ fun WordDetailsCard(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Show Arabic meaning")
                             }
+                        }
+                    }
+                }
+
+                // Optional AI enrichment button for offline dictionary / book words
+                val needsEnrichment = wordEntity.synonyms.isBlank() &&
+                    wordEntity.mnemonic.isBlank() &&
+                    wordEntity.imagePrompt.isBlank()
+                if (needsEnrichment) {
+                    HorizontalDivider(
+                        thickness = 0.5.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    )
+                    FilledTonalButton(
+                        onClick = { viewModel.enrichWordWithAi(wordEntity) },
+                        enabled = !isEnriching,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 46.dp)
+                            .testTag("enrich_with_ai_button")
+                    ) {
+                        if (isEnriching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Enriching with AI...")
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Enrich with AI (Synonyms, Mnemonic & Photo)")
                         }
                     }
                 }
