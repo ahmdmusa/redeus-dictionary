@@ -69,8 +69,28 @@ class WordRepository(
         offlineDictionary?.getTopicWordLowersMap() ?: emptyMap()
     }
 
-    suspend fun searchOfflineSuggestions(query: String, limit: Int = 10): List<OfflineSearchSuggestion> = withContext(Dispatchers.IO) {
-        offlineDictionary?.searchSuggestions(query, limit) ?: emptyList()
+    suspend fun searchOfflineSuggestions(
+        query: String,
+        limit: Int = 10,
+        booksOnly: Boolean = false
+    ): List<OfflineSearchSuggestion> = withContext(Dispatchers.IO) {
+        offlineDictionary?.searchSuggestions(query, limit, booksOnly) ?: emptyList()
+    }
+
+    suspend fun findFuzzyOfflineSuggestions(query: String, limit: Int = 5): List<OfflineSearchSuggestion> = withContext(Dispatchers.IO) {
+        offlineDictionary?.findFuzzySuggestions(query, limit) ?: emptyList()
+    }
+
+    suspend fun getWordOfTheDay(epochDay: Long = java.time.LocalDate.now().toEpochDay()): OfflineCurriculumWord? = withContext(Dispatchers.IO) {
+        offlineDictionary?.getWordOfTheDay(epochDay)
+    }
+
+    suspend fun getWordsByCefr(cefr: String, limit: Int = 40): List<OfflineCurriculumWord> = withContext(Dispatchers.IO) {
+        offlineDictionary?.getWordsByCefr(cefr, limit) ?: emptyList()
+    }
+
+    suspend fun findCurriculumOccurrences(word: String): List<OfflineCurriculumWord> = withContext(Dispatchers.IO) {
+        offlineDictionary?.findAllCurriculumOccurrencesWithStem(word) ?: emptyList()
     }
 
     suspend fun searchOfflineCurriculumWords(
@@ -87,7 +107,7 @@ class WordRepository(
 
     suspend fun hasOfflineCurriculumOrDictWord(word: String): Boolean = withContext(Dispatchers.IO) {
         val db = offlineDictionary ?: return@withContext false
-        db.findBestCurriculumWord(word) != null || db.getGeneralArabicTranslation(word) != null
+        db.findAllCurriculumOccurrencesWithStem(word).isNotEmpty() || db.getGeneralArabicTranslation(word) != null
     }
 
     suspend fun updateArabicMeaning(word: String, arabicMeaning: String) = withContext(Dispatchers.IO) {
@@ -366,6 +386,7 @@ class WordRepository(
             var photoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
 
             if (!photoUrl.isNullOrBlank()) {
+                context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, photoUrl) }
                 return@withContext CyclePhotoResult.Success(photoUrl, page)
             }
 
@@ -380,6 +401,7 @@ class WordRepository(
                 )
                 val wrapUrl = wrapResponse.photos?.firstOrNull()?.src?.medium
                 if (!wrapUrl.isNullOrBlank()) {
+                    context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, wrapUrl) }
                     return@withContext CyclePhotoResult.WrappedToBeginning(wrapUrl)
                 }
             }
@@ -395,6 +417,7 @@ class WordRepository(
                 )
                 val fallbackUrl = fallbackResponse.photos?.firstOrNull()?.src?.medium
                 if (!fallbackUrl.isNullOrBlank()) {
+                    context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, fallbackUrl) }
                     return@withContext CyclePhotoResult.Success(fallbackUrl, page)
                 }
             }
@@ -408,6 +431,14 @@ class WordRepository(
 
     suspend fun logReview(word: String, rating: String) = withContext(Dispatchers.IO) {
         wordDao.insertReviewLog(ReviewLogEntity(word = word, rating = rating))
+    }
+
+    suspend fun logReviewReturningId(word: String, rating: String): Long = withContext(Dispatchers.IO) {
+        wordDao.insertReviewLogReturningId(ReviewLogEntity(word = word, rating = rating))
+    }
+
+    suspend fun deleteReviewLogById(id: Long) = withContext(Dispatchers.IO) {
+        wordDao.deleteReviewLogById(id)
     }
 
     suspend fun getAllReviewLogs(): List<ReviewLogEntity> = withContext(Dispatchers.IO) {
@@ -458,16 +489,28 @@ class WordRepository(
             return@withContext Result.success(updated)
         }
 
-        // 2. Offline-first lookup in bundled 9-book curriculum (6 Essential Books + 3 IELTS Books)
+        // 2. Offline-first lookup in bundled 9-book curriculum (exact + English stem fallback)
         if (!forceAiEnrich) {
-            val curriculumOccurrences = offlineDictionary?.findAllCurriculumOccurrences(cleanWord).orEmpty()
+            val curriculumOccurrences = offlineDictionary?.findAllCurriculumOccurrencesWithStem(cleanWord).orEmpty()
             val bestCurriculum = curriculumOccurrences.firstOrNull()
             if (bestCurriculum != null) {
-                val entity = OfflineDictionaryDatabase.toWordEntity(
-                    item = bestCurriculum,
-                    allOccurrences = curriculumOccurrences,
-                    isBookmarked = false
-                )
+                val existingStem = wordDao.getWord(bestCurriculum.word.trim().lowercase())
+                val entity = if (existingStem != null) {
+                    existingStem.copy(
+                        definition = existingStem.definition.ifBlank { bestCurriculum.definitionEn },
+                        example = existingStem.example.ifBlank { bestCurriculum.exampleEn },
+                        arabicMeaning = existingStem.arabicMeaning.ifBlank { bestCurriculum.translationAr },
+                        phonetic = existingStem.phonetic.ifBlank { bestCurriculum.ipa },
+                        partOfSpeech = existingStem.partOfSpeech.ifBlank { bestCurriculum.pos },
+                        timestamp = System.currentTimeMillis()
+                    )
+                } else {
+                    OfflineDictionaryDatabase.toWordEntity(
+                        item = bestCurriculum,
+                        allOccurrences = curriculumOccurrences,
+                        isBookmarked = false
+                    )
+                }
                 wordDao.insertWord(entity)
                 return@withContext Result.success(entity)
             }

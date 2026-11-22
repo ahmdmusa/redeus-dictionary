@@ -1,4 +1,4 @@
-﻿package com.example.ui
+package com.example.ui
 
 import android.content.Context
 import androidx.compose.runtime.Composable
@@ -24,10 +24,12 @@ fun filterWordList(
 ): List<WordEntity> {
     return list.filter { word ->
         val query = searchQuery.trim().lowercase()
+        val normArQuery = com.example.data.ArabicNormalizer.normalize(query)
         val matchesQuery = query.isEmpty() ||
             word.word.lowercase().contains(query) ||
             word.definition.lowercase().contains(query) ||
-            word.tags.lowercase().contains(query)
+            word.tags.lowercase().contains(query) ||
+            (normArQuery.isNotEmpty() && com.example.data.ArabicNormalizer.normalize(word.arabicMeaning).contains(normArQuery))
 
         val matchesStatus = when (statusFilter) {
             WordStatusFilter.ALL -> true
@@ -75,17 +77,7 @@ fun getAIImageUrl(word: String, prompt: String): String {
 @Composable
 fun rememberAppImageLoader(context: Context): ImageLoader {
     return remember(context) {
-        ImageLoader.Builder(context)
-            .okHttpClient {
-                OkHttpClient.Builder()
-                    .connectTimeout(8, TimeUnit.SECONDS)
-                    .readTimeout(12, TimeUnit.SECONDS)
-                    .writeTimeout(10, TimeUnit.SECONDS)
-                    .callTimeout(15, TimeUnit.SECONDS)
-                    .build()
-            }
-            .crossfade(true)
-            .build()
+        com.example.data.LocalWordImageStore.getSharedImageLoader(context)
     }
 }
 

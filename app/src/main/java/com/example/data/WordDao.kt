@@ -53,6 +53,12 @@ interface WordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReviewLog(log: ReviewLogEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertReviewLogReturningId(log: ReviewLogEntity): Long
+
+    @Query("DELETE FROM review_logs WHERE id = :id")
+    suspend fun deleteReviewLogById(id: Long)
+
     @Query("SELECT * FROM review_logs ORDER BY timestamp DESC")
     suspend fun getAllReviewLogs(): List<ReviewLogEntity>
 

@@ -1,22 +1,12 @@
 package com.example.ui.navigation
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
-import androidx.compose.material.icons.filled.Bookmark
-import androidx.compose.material.icons.filled.RateReview
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Style
-import androidx.compose.material.icons.outlined.BookmarkBorder
-import androidx.compose.material.icons.outlined.RateReview
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Style
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
@@ -38,6 +28,14 @@ import com.example.ui.components.applePressScale
 
 val LocalWindowWidthSizeClass = staticCompositionLocalOf { WindowWidthSizeClass.Compact }
 
+/**
+ * Study-first 5-tab Information Architecture (Apple HIG tab-bars.md):
+ *   0 = Today (Daily Habit Home)
+ *   1 = Study (Unified FSRS + Extra Practice, with achievable daily due badge)
+ *   2 = Courses (9 Offline Books + 26 Topics as visual cover cards)
+ *   3 = Dictionary (Smart EN <-> AR Search + Deck + History)
+ *   4 = Profile (Analytics + Local Assets + Daily Reading + Mining + Settings)
+ */
 enum class RedeusDestination(
     val index: Int,
     val label: String,
@@ -46,45 +44,45 @@ enum class RedeusDestination(
     val selectedIcon: ImageVector,
     val unselectedIcon: ImageVector
 ) {
-    SEARCH(
+    TODAY(
         index = 0,
-        label = "Search",
-        pageTitle = "Dictionary",
-        contentDescription = "Word Lookup",
-        selectedIcon = Icons.Filled.Search,
-        unselectedIcon = Icons.Outlined.Search
+        label = "Today",
+        pageTitle = "Today",
+        contentDescription = "Daily Study Home",
+        selectedIcon = Icons.Filled.Home,
+        unselectedIcon = Icons.Outlined.Home
     ),
-    LIBRARY(
+    STUDY(
         index = 1,
-        label = "Library",
-        pageTitle = "Library",
-        contentDescription = "Courses & Deck",
-        selectedIcon = Icons.Filled.Bookmark,
-        unselectedIcon = Icons.Outlined.BookmarkBorder
-    ),
-    READING(
-        index = 2,
-        label = "Read",
-        pageTitle = "Reading",
-        contentDescription = "Daily Reading",
-        selectedIcon = Icons.AutoMirrored.Filled.MenuBook,
-        unselectedIcon = Icons.AutoMirrored.Outlined.MenuBook
-    ),
-    CARDS(
-        index = 3,
-        label = "Cards",
-        pageTitle = "Practice",
-        contentDescription = "Flashcards",
+        label = "Study",
+        pageTitle = "Study",
+        contentDescription = "Spaced Repetition Study",
         selectedIcon = Icons.Filled.Style,
         unselectedIcon = Icons.Outlined.Style
     ),
-    REVIEW(
+    COURSES(
+        index = 2,
+        label = "Courses",
+        pageTitle = "Courses",
+        contentDescription = "Offline Books & IELTS",
+        selectedIcon = Icons.Filled.LibraryBooks,
+        unselectedIcon = Icons.Outlined.LibraryBooks
+    ),
+    DICTIONARY(
+        index = 3,
+        label = "Search",
+        pageTitle = "Dictionary",
+        contentDescription = "Offline Bilingual Dictionary",
+        selectedIcon = Icons.Filled.Search,
+        unselectedIcon = Icons.Outlined.Search
+    ),
+    PROFILE(
         index = 4,
-        label = "Review",
-        pageTitle = "Review",
-        contentDescription = "Smart Review",
-        selectedIcon = Icons.Filled.RateReview,
-        unselectedIcon = Icons.Outlined.RateReview
+        label = "Profile",
+        pageTitle = "Profile",
+        contentDescription = "Progress, Tools & Settings",
+        selectedIcon = Icons.Filled.Person,
+        unselectedIcon = Icons.Outlined.Person
     )
 }
 
@@ -96,16 +94,17 @@ fun RedeusAppShell(
     cardsDueTodayCount: Int,
     snackbarHostState: SnackbarHostState,
     onOpenSettings: () -> Unit,
+    showTopHeader: Boolean = true,
     content: @Composable (PaddingValues) -> Unit
 ) {
     val widthSizeClass = LocalWindowWidthSizeClass.current
     val useNavigationRail = widthSizeClass != WindowWidthSizeClass.Compact
     val destinations = RedeusDestination.entries
-    val currentDest = destinations.getOrElse(selectedTab) { RedeusDestination.SEARCH }
+    val currentDest = destinations.getOrElse(selectedTab) { RedeusDestination.TODAY }
     val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
     val hairlineColor = if (isDark) Color.White.copy(alpha = 0.09f) else Color.Black.copy(alpha = 0.08f)
     val tabBarBackground = if (isDark) Color(0xFF121214) else Color(0xFFF9F9FB)
-    val inactiveTabColor = if (isDark) Color(0xFF8E8E93) else Color(0xFF8E8E93)
+    val inactiveTabColor = Color(0xFF8E8E93)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -113,178 +112,188 @@ fun RedeusAppShell(
             containerColor = MaterialTheme.colorScheme.surface,
             contentWindowInsets = WindowInsets.safeDrawing,
             topBar = {
-            // Apple HIG Clean Navigation Header: large editorial title + single quiet settings button
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.statusBarsPadding()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 20.dp, end = 14.dp, top = 10.dp, bottom = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                // Today renders its own editorial date + greeting + streak header; other tabs show clean Apple title
+                if (showTopHeader && currentDest != RedeusDestination.TODAY) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = currentDest.pageTitle,
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontSize = 28.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = (-0.5).sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        val settingsInteraction = remember { MutableInteractionSource() }
-                        Surface(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .applePressScale(settingsInteraction, 0.92f)
-                                .clip(CircleShape)
-                                .clickable(
-                                    interactionSource = settingsInteraction,
-                                    indication = null,
-                                    onClick = onOpenSettings
+                        Column(modifier = Modifier.statusBarsPadding()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, end = 10.dp, top = 8.dp, bottom = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = currentDest.pageTitle,
+                                    style = MaterialTheme.typography.headlineMedium.copy(
+                                        fontSize = 28.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = (-0.5).sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
-                                .testTag("settings_button"),
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.surfaceContainerLow
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Settings,
-                                    contentDescription = "Settings",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                val settingsInteraction = remember { MutableInteractionSource() }
+                                Surface(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .applePressScale(settingsInteraction, 0.92f)
+                                        .clip(CircleShape)
+                                        .clickable(
+                                            interactionSource = settingsInteraction,
+                                            indication = null,
+                                            onClick = onOpenSettings
+                                        )
+                                        .testTag("settings_button"),
+                                    shape = CircleShape,
+                                    color = Color.Transparent
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                            modifier = Modifier.size(38.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Settings,
+                                                    contentDescription = "Settings",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                            HorizontalDivider(thickness = 0.5.dp, color = hairlineColor)
                         }
                     }
-                    HorizontalDivider(thickness = 0.5.dp, color = hairlineColor)
                 }
-            }
-        },
-        bottomBar = {
-            if (!useNavigationRail) {
-                // Apple HIG Clean Tab Bar — zero chunky M3 pill, crisp tint & hairline separator
-                Surface(
-                    color = tabBarBackground,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.navigationBarsPadding()) {
-                        HorizontalDivider(thickness = 0.5.dp, color = hairlineColor)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(58.dp)
-                                .padding(horizontal = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceAround,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            destinations.forEach { destination ->
-                                val isSelected = selectedTab == destination.index
-                                val itemColor = if (isSelected) MaterialTheme.colorScheme.primary else inactiveTabColor
-                                val interactionSource = remember { MutableInteractionSource() }
+            },
+            bottomBar = {
+                if (!useNavigationRail) {
+                    Surface(
+                        color = tabBarBackground,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.navigationBarsPadding()) {
+                            HorizontalDivider(thickness = 0.5.dp, color = hairlineColor)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(60.dp)
+                                    .padding(horizontal = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceAround,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                destinations.forEach { destination ->
+                                    val isSelected = selectedTab == destination.index
+                                    val itemColor = if (isSelected) MaterialTheme.colorScheme.primary else inactiveTabColor
+                                    val interactionSource = remember { MutableInteractionSource() }
 
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight()
-                                        .applePressScale(interactionSource, 0.94f)
-                                        .clickable(
-                                            interactionSource = interactionSource,
-                                            indication = null,
-                                            onClick = { onSelectTab(destination.index) }
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxHeight()
+                                            .applePressScale(interactionSource, 0.94f)
+                                            .clickable(
+                                                interactionSource = interactionSource,
+                                                indication = null,
+                                                onClick = { onSelectTab(destination.index) }
+                                            )
+                                            .testTag("nav_tab_${destination.name.lowercase()}")
+                                            .padding(vertical = 6.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)
+                                    ) {
+                                        DestinationIconWithBadge(
+                                            destination = destination,
+                                            isSelected = isSelected,
+                                            tint = itemColor,
+                                            cardsDueTodayCount = cardsDueTodayCount
                                         )
-                                        .padding(vertical = 6.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically)
-                                ) {
-                                    DestinationIconWithBadge(
-                                        destination = destination,
-                                        isSelected = isSelected,
-                                        tint = itemColor,
-                                        cardsDueTodayCount = cardsDueTodayCount
-                                    )
-                                    Text(
-                                        text = destination.label,
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontSize = 10.5.sp,
-                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                                            letterSpacing = 0.sp
-                                        ),
-                                        color = itemColor,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Visible
-                                    )
+                                        Text(
+                                            text = destination.label,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 10.5.sp,
+                                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                                                letterSpacing = 0.sp
+                                            ),
+                                            color = itemColor,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Visible
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
-    ) { innerPadding ->
-        if (useNavigationRail) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                NavigationRail(
-                    containerColor = tabBarBackground,
-                    contentColor = MaterialTheme.colorScheme.onSurface
+        ) { innerPadding ->
+            if (useNavigationRail) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
                 ) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    destinations.forEach { destination ->
-                        val isSelected = selectedTab == destination.index
-                        NavigationRailItem(
-                            selected = isSelected,
-                            onClick = { onSelectTab(destination.index) },
-                            colors = NavigationRailItemDefaults.colors(
-                                indicatorColor = Color.Transparent,
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                unselectedIconColor = inactiveTabColor,
-                                unselectedTextColor = inactiveTabColor
-                            ),
-                            icon = {
-                                DestinationIconWithBadge(
-                                    destination = destination,
-                                    isSelected = isSelected,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else inactiveTabColor,
-                                    cardsDueTodayCount = cardsDueTodayCount
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = destination.label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        )
+                    NavigationRail(
+                        containerColor = tabBarBackground,
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    ) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        destinations.forEach { destination ->
+                            val isSelected = selectedTab == destination.index
+                            NavigationRailItem(
+                                selected = isSelected,
+                                onClick = { onSelectTab(destination.index) },
+                                colors = NavigationRailItemDefaults.colors(
+                                    indicatorColor = Color.Transparent,
+                                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                                    unselectedIconColor = inactiveTabColor,
+                                    unselectedTextColor = inactiveTabColor
+                                ),
+                                icon = {
+                                    DestinationIconWithBadge(
+                                        destination = destination,
+                                        isSelected = isSelected,
+                                        tint = if (isSelected) MaterialTheme.colorScheme.primary else inactiveTabColor,
+                                        cardsDueTodayCount = cardsDueTodayCount
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = destination.label,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
+                    }
+                    VerticalDivider(thickness = 0.5.dp, color = hairlineColor)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                    ) {
+                        content(PaddingValues(0.dp))
                     }
                 }
-                VerticalDivider(thickness = 0.5.dp, color = hairlineColor)
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                ) {
-                    content(PaddingValues(0.dp))
-                }
+            } else {
+                content(innerPadding)
             }
-        } else {
-            content(innerPadding)
         }
-    }
 
-        // Apple HIG Top-Floating Toast Banner — never covers bottom FSRS rating buttons or tab bar
+        // Apple HIG Top-Floating Toast Banner
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
@@ -312,21 +321,22 @@ private fun DestinationIconWithBadge(
     cardsDueTodayCount: Int
 ) {
     val icon = if (isSelected) destination.selectedIcon else destination.unselectedIcon
-    if (destination == RedeusDestination.REVIEW && cardsDueTodayCount > 0) {
+    if (destination == RedeusDestination.STUDY && cardsDueTodayCount > 0) {
         BadgedBox(
             badge = {
                 Badge(
                     containerColor = Color(0xFFFF3B30),
                     contentColor = Color.White,
                     modifier = Modifier.semantics {
-                        contentDescription = "$cardsDueTodayCount cards due for review"
+                        contentDescription = "$cardsDueTodayCount cards ready to study today"
                     }
                 ) {
                     Text(
                         text = if (cardsDueTodayCount > 99) "99+" else cardsDueTodayCount.toString(),
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            fontFeatureSettings = "tnum"
                         )
                     )
                 }

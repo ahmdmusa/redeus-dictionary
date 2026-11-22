@@ -102,15 +102,22 @@ class OfflineDictionaryDatabase private constructor(
 
     private fun ensureDatabaseCopied(): File? {
         val targetFile = context.getDatabasePath(DB_FILE_NAME)
-        if (targetFile.exists() && targetFile.length() > 100_000L) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val installedVersion = prefs.getInt(KEY_DB_VERSION, 0)
+        if (installedVersion == CURRENT_DB_VERSION && targetFile.exists() && targetFile.length() > 100_000L) {
             return targetFile
         }
         targetFile.parentFile?.mkdirs()
+        // Remove legacy v1 database copy if present to reclaim storage
+        val legacyV1 = context.getDatabasePath("sara_dictionary_v1.db")
+        if (legacyV1.exists() && legacyV1.absolutePath != targetFile.absolutePath) {
+            legacyV1.delete()
+        }
         val tempFile = File(targetFile.parentFile, "$DB_FILE_NAME.tmp")
         return try {
             context.assets.open(ASSET_PATH).use { input ->
                 FileOutputStream(tempFile).use { output ->
-                    val buffer = ByteArray(16 * 1024)
+                    val buffer = ByteArray(32 * 1024)
                     var read: Int
                     while (input.read(buffer).also { read = it } != -1) {
                         output.write(buffer, 0, read)
@@ -123,6 +130,7 @@ class OfflineDictionaryDatabase private constructor(
                 tempFile.copyTo(targetFile, overwrite = true)
                 tempFile.delete()
             }
+            prefs.edit().putInt(KEY_DB_VERSION, CURRENT_DB_VERSION).apply()
             targetFile
         } catch (e: Exception) {
             Log.e(TAG, "Failed to copy offline dictionary asset '$ASSET_PATH'", e)
@@ -388,29 +396,189 @@ class OfflineDictionaryDatabase private constructor(
      * Instant offline autocomplete suggestions supporting both English prefix/contains
      * and Arabic meaning search.
      */
-    fun searchSuggestions(query: String, limit: Int = 10): List<OfflineSearchSuggestion> {
+    fun findAllCurriculumOccurrencesWithStem(query: String): List<OfflineCurriculumWord> {
+        val exact = findAllCurriculumOccurrences(query)
+        if (exact.isNotEmpty()) return exact
+        for (stem in OfflineQueryMatcher.generateEnglishStemCandidates(query)) {
+            val hits = findAllCurriculumOccurrences(stem)
+            if (hits.isNotEmpty()) return hits
+        }
+        return emptyList()
+    }
+
+    fun getWordOfTheDay(epochDay: Long): OfflineCurriculumWord? {
+        val db = openDb() ?: return null
+        val total = db.rawQuery(
+            "SELECT COUNT(*) FROM curriculum_words WHERE book_num <= 6",
+            null
+        ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
+        if (total <= 0) return null
+        // Deterministic pseudo-random spread across all 3,600 Essential Book words
+        val offset = ((kotlin.math.abs(epochDay * 2654435761L) % total.toLong()).toInt()).coerceIn(0, total - 1)
+        return db.rawQuery(
+            """
+            SELECT cw.id, cw.word, cw.ipa, cw.pos, cw.definition_en, cw.translation_ar,
+                   cw.example_en, cw.book_num, cw.unit_num, cw.topic_id, cw.word_order,
+                   cw.cefr, cw.category, b.short_tag, u.title
+            FROM curriculum_words cw
+            JOIN books b ON b.book_num = cw.book_num
+            JOIN units u ON u.book_num = cw.book_num AND u.unit_num = cw.unit_num
+            WHERE cw.book_num <= 6
+            ORDER BY cw.book_num ASC, cw.unit_num ASC, cw.word_order ASC
+            LIMIT 1 OFFSET ?
+            """.trimIndent(),
+            arrayOf(offset.toString())
+        ).use { c ->
+            if (c.moveToNext()) readCurriculumWord(c) else null
+        }
+    }
+
+    fun getWordsByCefr(cefrFilter: String, limit: Int = 40): List<OfflineCurriculumWord> {
+        val db = openDb() ?: return emptyList()
+        val clean = cefrFilter.trim().uppercase()
+        if (clean.isEmpty()) return emptyList()
+        val result = mutableListOf<OfflineCurriculumWord>()
+        val isIelts = clean == "IELTS"
+        val sql = if (isIelts) {
+            """
+            SELECT cw.id, cw.word, cw.ipa, cw.pos, cw.definition_en, cw.translation_ar,
+                   cw.example_en, cw.book_num, cw.unit_num, cw.topic_id, cw.word_order,
+                   cw.cefr, cw.category, b.short_tag, u.title
+            FROM curriculum_words cw
+            JOIN books b ON b.book_num = cw.book_num
+            JOIN units u ON u.book_num = cw.book_num AND u.unit_num = cw.unit_num
+            WHERE cw.category = 'ielts'
+            GROUP BY cw.word_lower
+            ORDER BY cw.book_num ASC, cw.unit_num ASC, cw.word_order ASC
+            LIMIT ?
+            """.trimIndent()
+        } else {
+            """
+            SELECT cw.id, cw.word, cw.ipa, cw.pos, cw.definition_en, cw.translation_ar,
+                   cw.example_en, cw.book_num, cw.unit_num, cw.topic_id, cw.word_order,
+                   cw.cefr, cw.category, b.short_tag, u.title
+            FROM curriculum_words cw
+            JOIN books b ON b.book_num = cw.book_num
+            JOIN units u ON u.book_num = cw.book_num AND u.unit_num = cw.unit_num
+            WHERE UPPER(cw.cefr) LIKE ?
+            GROUP BY cw.word_lower
+            ORDER BY cw.book_num ASC, cw.unit_num ASC, cw.word_order ASC
+            LIMIT ?
+            """.trimIndent()
+        }
+        val args = if (isIelts) arrayOf(limit.toString()) else arrayOf("%$clean%", limit.toString())
+        db.rawQuery(sql, args).use { c ->
+            while (c.moveToNext()) {
+                result.add(readCurriculumWord(c))
+            }
+        }
+        return result
+    }
+
+    fun findFuzzySuggestions(query: String, limit: Int = 5): List<OfflineSearchSuggestion> {
+        val db = openDb() ?: return emptyList()
+        val clean = query.trim().lowercase()
+        if (clean.length < 3 || ArabicNormalizer.containsArabic(clean)) return emptyList()
+
+        val firstChar = clean[0]
+        val nextChar = (firstChar.code + 1).toChar()
+        val minLen = (clean.length - 2).coerceAtLeast(2)
+        val maxLen = clean.length + 2
+        val pool = LinkedHashMap<String, OfflineSearchSuggestion>()
+
+        // Gather same-initial curriculum words within ±2 length for fast Levenshtein ranking
+        db.rawQuery(
+            """
+            SELECT cw.word, cw.translation_ar, cw.definition_en, b.short_tag
+            FROM curriculum_words cw
+            JOIN books b ON b.book_num = cw.book_num
+            WHERE cw.word_lower >= ? AND cw.word_lower < ?
+              AND LENGTH(cw.word_lower) BETWEEN CAST(? AS INTEGER) AND CAST(? AS INTEGER)
+            GROUP BY cw.word_lower
+            LIMIT 800
+            """.trimIndent(),
+            arrayOf(firstChar.toString(), nextChar.toString(), minLen.toString(), maxLen.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                val w = c.getString(0)
+                val key = w.lowercase()
+                if (!pool.containsKey(key)) {
+                    pool[key] = OfflineSearchSuggestion(
+                        word = w,
+                        translationAr = c.getString(1),
+                        previewDef = c.getString(2),
+                        badge = c.getString(3),
+                        isCurriculum = true
+                    )
+                }
+            }
+        }
+
+        // Also check 2-char prefix in general_dict if pool is small
+        if (pool.size < 120) {
+            val p2 = clean.take(2)
+            val p2End = p2.dropLast(1) + (p2.last() + 1)
+            db.rawQuery(
+                """
+                SELECT word_lower, translation_ar
+                FROM general_dict
+                WHERE word_lower >= ? AND word_lower < ?
+                  AND LENGTH(word_lower) BETWEEN CAST(? AS INTEGER) AND CAST(? AS INTEGER)
+                LIMIT 300
+                """.trimIndent(),
+                arrayOf(p2, p2End, minLen.toString(), maxLen.toString())
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val w = c.getString(0)
+                    val key = w.lowercase()
+                    if (!pool.containsKey(key)) {
+                        pool[key] = OfflineSearchSuggestion(
+                            word = w,
+                            translationAr = c.getString(1),
+                            previewDef = "",
+                            badge = "Dictionary",
+                            isCurriculum = false
+                        )
+                    }
+                }
+            }
+        }
+
+        val ranked = OfflineQueryMatcher.rankFuzzyMatches(clean, pool.keys, limit)
+        return ranked.mapNotNull { pool[it.lowercase()] }
+    }
+
+    fun searchSuggestions(
+        query: String,
+        limit: Int = 10,
+        booksOnly: Boolean = false
+    ): List<OfflineSearchSuggestion> {
         val db = openDb() ?: return emptyList()
         val clean = query.trim().lowercase()
         if (clean.length < 2) return emptyList()
 
         val seenWords = LinkedHashSet<String>()
         val results = mutableListOf<OfflineSearchSuggestion>()
-        val isArabicQuery = containsArabic(clean)
+        val isArabicQuery = ArabicNormalizer.containsArabic(clean)
 
         if (isArabicQuery) {
-            val likePattern = "%$clean%"
+            val normQuery = ArabicNormalizer.normalize(clean)
+            if (normQuery.isBlank()) return emptyList()
+            val likePattern = "%$normQuery%"
             db.rawQuery(
                 """
                 SELECT cw.word, cw.translation_ar, cw.definition_en, b.short_tag
                 FROM curriculum_words cw
                 JOIN books b ON b.book_num = cw.book_num
-                WHERE cw.translation_ar LIKE ?
+                WHERE cw.translation_ar_norm LIKE ?
                 ORDER BY
-                    CASE WHEN cw.translation_ar = ? THEN 0 WHEN cw.translation_ar LIKE ? THEN 1 ELSE 2 END ASC,
+                    CASE WHEN cw.translation_ar_norm = ? THEN 0
+                         WHEN cw.translation_ar_norm LIKE ? THEN 1
+                         ELSE 2 END ASC,
                     cw.book_num ASC
                 LIMIT ?
                 """.trimIndent(),
-                arrayOf(likePattern, clean, "$clean%", (limit * 2).toString())
+                arrayOf(likePattern, normQuery, "$normQuery%", (limit * 2).toString())
             ).use { c ->
                 while (c.moveToNext() && results.size < limit) {
                     val w = c.getString(0)
@@ -427,16 +595,21 @@ class OfflineDictionaryDatabase private constructor(
                     }
                 }
             }
-            if (results.size < limit) {
+            if (!booksOnly && results.size < limit) {
                 val remaining = limit - results.size
                 db.rawQuery(
                     """
                     SELECT word_lower, translation_ar
                     FROM general_dict
-                    WHERE translation_ar LIKE ?
+                    WHERE translation_ar_norm LIKE ?
+                    ORDER BY
+                        CASE WHEN translation_ar_norm = ? THEN 0
+                             WHEN translation_ar_norm LIKE ? THEN 1
+                             ELSE 2 END ASC,
+                        LENGTH(word_lower) ASC
                     LIMIT ?
                     """.trimIndent(),
-                    arrayOf(likePattern, (remaining * 2).toString())
+                    arrayOf(likePattern, normQuery, "$normQuery%", (remaining * 2).toString())
                 ).use { c ->
                     while (c.moveToNext() && results.size < limit) {
                         val w = c.getString(0)
@@ -487,8 +660,44 @@ class OfflineDictionaryDatabase private constructor(
                 }
             }
 
+            // 1b. English inflected stem fallback (e.g., "abandoned" -> "abandon", "children" -> "child")
+            if (results.none { it.word.equals(clean, ignoreCase = true) } && results.size < limit) {
+                val stems = OfflineQueryMatcher.generateEnglishStemCandidates(clean)
+                for (stem in stems) {
+                    if (results.size >= limit) break
+                    if (seenWords.contains(stem)) continue
+                    db.rawQuery(
+                        """
+                        SELECT cw.word, cw.translation_ar, cw.definition_en, b.short_tag
+                        FROM curriculum_words cw
+                        JOIN books b ON b.book_num = cw.book_num
+                        WHERE cw.word_lower = ?
+                        ORDER BY cw.book_num ASC
+                        LIMIT 1
+                        """.trimIndent(),
+                        arrayOf(stem)
+                    ).use { c ->
+                        if (c.moveToNext()) {
+                            val w = c.getString(0)
+                            if (seenWords.add(w.lowercase())) {
+                                results.add(
+                                    0,
+                                    OfflineSearchSuggestion(
+                                        word = w,
+                                        translationAr = c.getString(1),
+                                        previewDef = c.getString(2),
+                                        badge = "${c.getString(3)} · Stem",
+                                        isCurriculum = true
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 2. General 87K dictionary prefix matches
-            if (results.size < limit) {
+            if (!booksOnly && results.size < limit) {
                 val remaining = limit - results.size
                 db.rawQuery(
                     """
@@ -518,7 +727,7 @@ class OfflineDictionaryDatabase private constructor(
             }
         }
 
-        return results
+        return results.take(limit)
     }
 
     fun searchCurriculumWords(
@@ -531,9 +740,12 @@ class OfflineDictionaryDatabase private constructor(
         if (clean.isEmpty()) return emptyList()
 
         val result = mutableListOf<OfflineCurriculumWord>()
+        val isArabic = ArabicNormalizer.containsArabic(clean)
+        val normAr = if (isArabic) ArabicNormalizer.normalize(clean) else clean
         val like = "%$clean%"
+        val arLike = "%$normAr%"
         val categoryClause = if (category != null) "AND cw.category = ?" else ""
-        val args = mutableListOf(like, like, like)
+        val args = mutableListOf(like, arLike, like)
         if (category != null) args.add(category)
         args.add(limit.toString())
 
@@ -545,7 +757,7 @@ class OfflineDictionaryDatabase private constructor(
             FROM curriculum_words cw
             JOIN books b ON b.book_num = cw.book_num
             JOIN units u ON u.book_num = cw.book_num AND u.unit_num = cw.unit_num
-            WHERE (cw.word_lower LIKE ? OR cw.translation_ar LIKE ? OR LOWER(cw.definition_en) LIKE ?)
+            WHERE (cw.word_lower LIKE ? OR cw.translation_ar_norm LIKE ? OR LOWER(cw.definition_en) LIKE ?)
             $categoryClause
             ORDER BY
                 CASE WHEN cw.word_lower = '${clean.replace("'", "''")}' THEN 0
@@ -585,8 +797,11 @@ class OfflineDictionaryDatabase private constructor(
 
     companion object {
         private const val TAG = "OfflineDictionaryDB"
+        private const val PREFS_NAME = "offline_assets_prefs"
+        private const val KEY_DB_VERSION = "offline_dict_db_version"
+        private const val CURRENT_DB_VERSION = 2
         private const val ASSET_PATH = "databases/sara_dictionary.db"
-        private const val DB_FILE_NAME = "sara_dictionary_v1.db"
+        private const val DB_FILE_NAME = "sara_dictionary_v2.db"
 
         @Volatile
         private var INSTANCE: OfflineDictionaryDatabase? = null
@@ -600,7 +815,7 @@ class OfflineDictionaryDatabase private constructor(
         }
 
         fun containsArabic(text: String): Boolean {
-            return text.any { ch -> ch in '\u0600'..'\u06FF' || ch in '\u0750'..'\u077F' }
+            return ArabicNormalizer.containsArabic(text)
         }
 
         fun buildDeckTagForUnit(bookShortTag: String, unitNum: Int): String {

@@ -19,12 +19,23 @@ import com.example.data.WordRepository
 import com.example.data.ReviewLogEntity
 import com.example.data.ReadingSessionEntity
 import com.example.data.MinedSentenceEntity
+import com.example.api.DictionaryAudioApiService
+import com.example.api.selectAudioUrl
+import com.example.data.LocalWordImageStore
 import com.example.data.OfflineBook
 import com.example.data.OfflineCurriculumWord
 import com.example.data.OfflineDictionaryDatabase
 import com.example.data.OfflineSearchSuggestion
 import com.example.data.OfflineTopic
 import com.example.data.OfflineUnit
+import com.example.domain.ActiveStudySession
+import com.example.domain.CardStudyBucket
+import com.example.domain.CourseProgressCalculator
+import com.example.domain.LastReviewSnapshot
+import com.example.domain.SessionSummaryData
+import com.example.domain.StudyQueuePlanner
+import com.example.domain.StudyRecallMode
+import com.example.domain.TodayQueueSummary
 import io.github.openspacedrepetition.Card
 import io.github.openspacedrepetition.Rating
 import io.github.openspacedrepetition.Scheduler
@@ -40,6 +51,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -585,12 +597,20 @@ class DictionaryViewModel(
                         )
                     }
 
-                    // Update reviewQueue in-place
+                    // Update reviewQueue and activeStudySession in-place
                     _reviewQueue.value = _reviewQueue.value.map {
                         if (it.word.equals(wordEntity.word, ignoreCase = true)) {
                             it.copy(imagePrompt = result.photoUrl)
                         } else it
                     }
+                    _activeStudySession.value = _activeStudySession.value?.let { s ->
+                        s.copy(queue = s.queue.map {
+                            if (it.word.equals(wordEntity.word, ignoreCase = true)) it.copy(imagePrompt = result.photoUrl) else it
+                        })
+                    }
+                    _localImageRefreshVersion.value = _localImageRefreshVersion.value + 1
+                    refreshLocalImageStats()
+                    _snackbarMessage.tryEmit("Saved offline photo for '${wordEntity.word}'")
                 }
                 is WordRepository.CyclePhotoResult.WrappedToBeginning -> {
                     wordPhotoPageMap[cleanWord] = 1
@@ -610,6 +630,13 @@ class DictionaryViewModel(
                             it.copy(imagePrompt = result.photoUrl)
                         } else it
                     }
+                    _activeStudySession.value = _activeStudySession.value?.let { s ->
+                        s.copy(queue = s.queue.map {
+                            if (it.word.equals(wordEntity.word, ignoreCase = true)) it.copy(imagePrompt = result.photoUrl) else it
+                        })
+                    }
+                    _localImageRefreshVersion.value = _localImageRefreshVersion.value + 1
+                    refreshLocalImageStats()
 
                     _snackbarMessage.tryEmit("Back to the first result for '${wordEntity.word}'")
                 }
@@ -1082,7 +1109,23 @@ class DictionaryViewModel(
                 if (current is SearchUiState.Success && current.word.word.equals(enriched.word, ignoreCase = true)) {
                     _searchUiState.value = SearchUiState.Success(enriched)
                 }
-                _snackbarMessage.tryEmit("Enriched \"${enriched.word}\" with AI details")
+                _reviewQueue.value = _reviewQueue.value.map {
+                    if (it.word.equals(enriched.word, ignoreCase = true)) enriched else it
+                }
+                _activeStudySession.value = _activeStudySession.value?.let { s ->
+                    s.copy(queue = s.queue.map {
+                        if (it.word.equals(enriched.word, ignoreCase = true)) enriched else it
+                    })
+                }
+                if (enriched.imagePrompt.startsWith("http")) {
+                    viewModelScope.launch {
+                        LocalWordImageStore.getInstance(getApplication())
+                            .downloadAndSavePermanently(enriched.word, enriched.imagePrompt)
+                        _localImageRefreshVersion.value = _localImageRefreshVersion.value + 1
+                        refreshLocalImageStats()
+                    }
+                }
+                _snackbarMessage.tryEmit("Saved offline AI notes for \"${enriched.word}\"")
             }.onFailure { err ->
                 _snackbarMessage.tryEmit(err.message ?: "AI enrichment failed")
             }
@@ -1549,6 +1592,765 @@ class DictionaryViewModel(
     private val _isRatingInProgress = MutableStateFlow(false)
     val isRatingInProgress: StateFlow<Boolean> = _isRatingInProgress.asStateFlow()
 
+    // =========================================================================
+    // v1.3.0 Unified Study Session, Active Course Auto-Feed, Smart Search & Local Assets
+    // =========================================================================
+
+    private val dictionaryAudioApiService = DictionaryAudioApiService.create()
+
+    private val _newCardsPerDay = MutableStateFlow(
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .getInt("new_cards_per_day", 10).coerceIn(5, 50)
+    )
+    val newCardsPerDay: StateFlow<Int> = _newCardsPerDay.asStateFlow()
+
+    private val _activeCourseBookNum = MutableStateFlow(
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .getInt("active_course_book_num", 0) // 0 = none chosen yet
+    )
+    val activeCourseBookNum: StateFlow<Int> = _activeCourseBookNum.asStateFlow()
+
+    private val _quizCountsInFsrs = MutableStateFlow(
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .getBoolean("quiz_counts_in_fsrs", false)
+    )
+    val quizCountsInFsrs: StateFlow<Boolean> = _quizCountsInFsrs.asStateFlow()
+
+    private val _uiLanguage = MutableStateFlow(
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .getString("ui_language", "en") ?: "en"
+    )
+    val uiLanguage: StateFlow<String> = _uiLanguage.asStateFlow()
+
+    private val _newCardsIntroducedToday = MutableStateFlow(loadNewCardsIntroducedToday())
+    val newCardsIntroducedToday: StateFlow<Int> = _newCardsIntroducedToday.asStateFlow()
+
+    private fun loadNewCardsIntroducedToday(): Int {
+        val prefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        val today = java.time.LocalDate.now().toEpochDay()
+        val storedDay = prefs.getLong("new_cards_introduced_day", -1L)
+        return if (storedDay == today) prefs.getInt("new_cards_introduced_count", 0).coerceAtLeast(0) else 0
+    }
+
+    private fun saveNewCardsIntroducedToday(count: Int) {
+        val safe = count.coerceAtLeast(0)
+        val today = java.time.LocalDate.now().toEpochDay()
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putLong("new_cards_introduced_day", today)
+            .putInt("new_cards_introduced_count", safe)
+            .apply()
+        _newCardsIntroducedToday.value = safe
+    }
+
+    fun setNewCardsPerDay(limit: Int) {
+        val clamped = limit.coerceIn(5, 50)
+        _newCardsPerDay.value = clamped
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putInt("new_cards_per_day", clamped).apply()
+    }
+
+    fun setActiveCourseBookNum(bookNum: Int) {
+        val safe = bookNum.coerceIn(0, 9)
+        _activeCourseBookNum.value = safe
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putInt("active_course_book_num", safe).apply()
+        if (safe > 0) {
+            loadActiveCourseUnitMap(safe)
+        }
+    }
+
+    fun setQuizCountsInFsrs(enabled: Boolean) {
+        _quizCountsInFsrs.value = enabled
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("quiz_counts_in_fsrs", enabled).apply()
+    }
+
+    fun setUiLanguage(lang: String) {
+        val normalized = if (lang.equals("ar", ignoreCase = true)) "ar" else "en"
+        _uiLanguage.value = normalized
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putString("ui_language", normalized).apply()
+    }
+
+    private val _activeCourseUnitWordMap = MutableStateFlow<Map<Int, Set<String>>>(emptyMap())
+    val activeCourseUnitWordMap: StateFlow<Map<Int, Set<String>>> = _activeCourseUnitWordMap.asStateFlow()
+
+    fun loadActiveCourseUnitMap(bookNum: Int = _activeCourseBookNum.value) {
+        if (bookNum <= 0) return
+        viewModelScope.launch {
+            _activeCourseUnitWordMap.value = repository.getOfflineUnitWordLowersMap(bookNum)
+        }
+    }
+
+    /** Achievable daily queue summary respecting newCardsPerDay (prevents 99+ badge overload). */
+    val todayQueueSummary: StateFlow<TodayQueueSummary> = combine(
+        repository.bookmarkedWords,
+        _newCardsPerDay,
+        _newCardsIntroducedToday
+    ) { bookmarked, limit, introduced ->
+        StudyQueuePlanner.summarizeToday(
+            bookmarkedWords = bookmarked,
+            todayEpochDay = java.time.LocalDate.now().toEpochDay(),
+            newCardsDailyLimit = limit,
+            newCardsIntroducedToday = introduced
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = TodayQueueSummary(0, 0, 0, 0, 0, 10)
+    )
+
+    private val _activeStudySession = MutableStateFlow<ActiveStudySession?>(null)
+    val activeStudySession: StateFlow<ActiveStudySession?> = _activeStudySession.asStateFlow()
+
+    private val _lastSessionSummary = MutableStateFlow<SessionSummaryData?>(null)
+    val lastSessionSummary: StateFlow<SessionSummaryData?> = _lastSessionSummary.asStateFlow()
+
+    private val _localImageRefreshVersion = MutableStateFlow(0)
+    val localImageRefreshVersion: StateFlow<Int> = _localImageRefreshVersion.asStateFlow()
+
+    private val _bundledLocalImagesCount = MutableStateFlow(0)
+    val bundledLocalImagesCount: StateFlow<Int> = _bundledLocalImagesCount.asStateFlow()
+
+    private val _savedLocalImagesCount = MutableStateFlow(0)
+    val savedLocalImagesCount: StateFlow<Int> = _savedLocalImagesCount.asStateFlow()
+
+    fun refreshLocalImageStats() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val store = LocalWordImageStore.getInstance(getApplication())
+            _bundledLocalImagesCount.value = store.getBundledImageCount()
+            _savedLocalImagesCount.value = store.getSavedPermanentImageCount()
+        }
+    }
+
+    fun getLocalImageOrigin(word: String): com.example.data.LocalImageOrigin {
+        return LocalWordImageStore.getInstance(getApplication()).getLocalImageOrigin(word)
+    }
+
+    fun startUnifiedStudySession(
+        deckFilter: String = _selectedReviewDeck.value,
+        deckTitle: String = if (deckFilter.equals("ALL", ignoreCase = true)) "Today's Session" else deckFilter,
+        extraNewBonus: Int = 0
+    ) {
+        viewModelScope.launch {
+            val today = java.time.LocalDate.now().toEpochDay()
+            val introduced = loadNewCardsIntroducedToday()
+            _newCardsIntroducedToday.value = introduced
+            val freshBookmarked = repository.getBookmarkedWordsList()
+            val planned = StudyQueuePlanner.buildDailyQueue(
+                bookmarkedWords = freshBookmarked,
+                todayEpochDay = today,
+                newCardsDailyLimit = _newCardsPerDay.value,
+                newCardsIntroducedToday = introduced,
+                deckFilter = deckFilter,
+                extraNewBonus = extraNewBonus
+            )
+            if (planned.isEmpty()) {
+                _snackbarMessage.tryEmit("All caught up! Add new words from Courses or study ahead.")
+                return@launch
+            }
+            _lastSessionSummary.value = null
+            _activeStudySession.value = ActiveStudySession(
+                sessionId = System.currentTimeMillis(),
+                deckTag = deckFilter,
+                deckTitle = deckTitle,
+                queue = planned,
+                completedCount = 0,
+                initialTotal = planned.size,
+                againCount = 0,
+                againWords = emptyList(),
+                startedAtMs = System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun startLeechesDrillSession() {
+        viewModelScope.launch {
+            val freshBookmarked = repository.getBookmarkedWordsList()
+            val leeches = StudyQueuePlanner.buildLeechesDrillQueue(freshBookmarked, limit = 20)
+            if (leeches.isEmpty()) {
+                _snackbarMessage.tryEmit("No weak or leech words right now — great job!")
+                return@launch
+            }
+            _lastSessionSummary.value = null
+            _activeStudySession.value = ActiveStudySession(
+                sessionId = System.currentTimeMillis(),
+                deckTag = "LEECHES",
+                deckTitle = "Weak Words Drill",
+                queue = leeches,
+                completedCount = 0,
+                initialTotal = leeches.size,
+                againCount = 0,
+                againWords = emptyList(),
+                startedAtMs = System.currentTimeMillis()
+            )
+        }
+    }
+
+    fun setSessionRecallMode(mode: StudyRecallMode) {
+        val current = _activeStudySession.value ?: return
+        _activeStudySession.value = current.copy(recallMode = mode)
+    }
+
+    fun closeStudySession() {
+        _activeStudySession.value = null
+        _lastSessionSummary.value = null
+        refreshStats()
+    }
+
+    fun dismissSessionSummary() {
+        _lastSessionSummary.value = null
+        _activeStudySession.value = null
+        refreshStats()
+    }
+
+    fun burySessionCard() {
+        val session = _activeStudySession.value ?: return
+        val card = session.currentCard ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val tomorrow = java.time.LocalDate.now().toEpochDay() + 1L
+            repository.updateWordReview(card.copy(dueDate = tomorrow))
+            val remaining = session.queue.drop(1)
+            val updated = session.copy(
+                queue = remaining,
+                stepIndex = session.stepIndex + 1
+            )
+            if (updated.isFinished) {
+                finishSessionToSummary(updated)
+            } else {
+                _activeStudySession.value = updated
+            }
+            _snackbarMessage.tryEmit("Buried '${card.word}' until tomorrow")
+        }
+    }
+
+    /**
+     * Rates the current card inside [activeStudySession], persists FSRS + ReviewLog + Streak,
+     * saves an exact [LastReviewSnapshot] for instant Undo, and transitions cleanly to Summary when done.
+     */
+    fun rateSessionCard(rating: String) {
+        val session = _activeStudySession.value ?: return
+        val card = session.currentCard ?: return
+        if (_isRatingInProgress.value) return
+        _isRatingInProgress.value = true
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val today = java.time.LocalDate.now().toEpochDay()
+                val wasNew = StudyQueuePlanner.classifyCard(card) == CardStudyBucket.NEW
+                val isAgain = rating.equals("Again", ignoreCase = true)
+
+                val updatedCard = computeUpdatedFsrsOrSm2Card(card, rating, today)
+                repository.updateWordReview(updatedCard)
+                val insertedLogId = repository.logReviewReturningId(card.word, rating)
+
+                // Update streak
+                val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                val lastStudy = sharedPrefs.getLong("last_study_date", -1L)
+                if (lastStudy != today) {
+                    val curStreak = if (lastStudy == today - 1) sharedPrefs.getInt("current_streak", 0) + 1 else 1
+                    val longStreak = maxOf(sharedPrefs.getInt("longest_streak", 0), curStreak)
+                    sharedPrefs.edit()
+                        .putLong("last_study_date", today)
+                        .putInt("current_streak", curStreak)
+                        .putInt("longest_streak", longStreak)
+                        .apply()
+                    _currentStreak.value = curStreak
+                    _longestStreak.value = longStreak
+                }
+
+                if (wasNew) {
+                    saveNewCardsIntroducedToday(loadNewCardsIntroducedToday() + 1)
+                }
+
+                val snapshot = LastReviewSnapshot(
+                    previousWord = card,
+                    insertedReviewLogId = insertedLogId,
+                    previousQueue = session.queue,
+                    previousCompletedCount = session.completedCount,
+                    previousAgainCount = session.againCount,
+                    previousAgainWords = session.againWords,
+                    wasNewIntroduction = wasNew
+                )
+
+                val tail = session.queue.drop(1)
+                val nextQueue = if (isAgain) {
+                    StudyQueuePlanner.requeueAgainCard(tail, updatedCard, spacing = 3)
+                } else {
+                    tail
+                }
+
+                val nextSession = session.copy(
+                    queue = nextQueue,
+                    completedCount = session.completedCount + 1,
+                    againCount = if (isAgain) session.againCount + 1 else session.againCount,
+                    againWords = if (isAgain) session.againWords + card else session.againWords,
+                    stepIndex = session.stepIndex + 1,
+                    undoSnapshot = snapshot
+                )
+
+                refreshStats()
+
+                if (nextSession.isFinished) {
+                    finishSessionToSummary(nextSession)
+                } else {
+                    _activeStudySession.value = nextSession
+                }
+            } finally {
+                _isRatingInProgress.value = false
+            }
+        }
+    }
+
+    private suspend fun finishSessionToSummary(finishedSession: ActiveStudySession) {
+        val today = java.time.LocalDate.now().toEpochDay()
+        val allBookmarked = repository.getBookmarkedWordsList()
+        val tomorrowRev = StudyQueuePlanner.countTomorrowDueReviews(allBookmarked, today)
+        val remainingNew = allBookmarked.count { StudyQueuePlanner.classifyCard(it) == CardStudyBucket.NEW }
+        val tomorrowNew = minOf(remainingNew, _newCardsPerDay.value)
+        _lastSessionSummary.value = finishedSession.toSummary(
+            tomorrowReviews = tomorrowRev,
+            tomorrowNew = tomorrowNew
+        )
+        _activeStudySession.value = finishedSession
+    }
+
+    /**
+     * Exact single-step Undo: restores previous WordEntity in Room, deletes the inserted ReviewLog,
+     * and restores the previous study session state cleanly.
+     */
+    fun undoLastSessionRating() {
+        val session = _activeStudySession.value ?: return
+        val snap = session.undoSnapshot ?: return
+        if (_isRatingInProgress.value) return
+        _isRatingInProgress.value = true
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                repository.updateWordReview(snap.previousWord)
+                snap.insertedReviewLogId?.let { id ->
+                    if (id > 0L) repository.deleteReviewLogById(id)
+                }
+                if (snap.wasNewIntroduction) {
+                    saveNewCardsIntroducedToday((loadNewCardsIntroducedToday() - 1).coerceAtLeast(0))
+                }
+                _lastSessionSummary.value = null
+                _activeStudySession.value = session.copy(
+                    queue = snap.previousQueue,
+                    completedCount = snap.previousCompletedCount,
+                    againCount = snap.previousAgainCount,
+                    againWords = snap.previousAgainWords,
+                    stepIndex = session.stepIndex + 1,
+                    undoSnapshot = null
+                )
+                refreshStats()
+                _snackbarMessage.tryEmit("Undid rating for '${snap.previousWord.word}'")
+            } finally {
+                _isRatingInProgress.value = false
+            }
+        }
+    }
+
+    /**
+     * Cold-start 1-tap onboarding: sets Active Course + New Cards/Day, imports the first batch
+     * from Unit 1, and immediately launches the learner's first study session.
+     */
+    fun startDayOnePlan(bookNum: Int, dailyNewLimit: Int) {
+        setActiveCourseBookNum(bookNum)
+        setNewCardsPerDay(dailyNewLimit)
+        viewModelScope.launch {
+            _isAddingCourseWords.value = true
+            try {
+                if (_offlineBooks.value.isEmpty()) {
+                    _offlineBooks.value = repository.getOfflineBooks()
+                    _offlineTopics.value = repository.getOfflineTopics()
+                    _bookWordLowersMap.value = repository.getOfflineBookWordLowersMap()
+                    _topicWordLowersMap.value = repository.getOfflineTopicWordLowersMap()
+                }
+                val units = repository.getOfflineUnitsForBook(bookNum)
+                val firstUnit = units.firstOrNull()
+                if (firstUnit != null) {
+                    val words = repository.getOfflineWordsForUnit(bookNum, firstUnit.unitNum)
+                    val batch = words.take(dailyNewLimit.coerceAtLeast(5))
+                    repository.addCurriculumWordsToDeck(batch)
+                    loadActiveCourseUnitMap(bookNum)
+                    val bookTitle = _offlineBooks.value.firstOrNull { it.bookNum == bookNum }?.shortTag ?: "Book $bookNum"
+                    startUnifiedStudySession(deckFilter = "ALL", deckTitle = "$bookTitle · Day 1")
+                }
+            } finally {
+                _isAddingCourseWords.value = false
+            }
+        }
+    }
+
+    /**
+     * Auto-feeds the next [count] unseen words from the learner's Active Course into the deck
+     * and optionally starts studying them immediately.
+     */
+    fun autoFeedActiveCourseWords(count: Int = _newCardsPerDay.value, launchSession: Boolean = true) {
+        val bookNum = _activeCourseBookNum.value.takeIf { it > 0 } ?: 1
+        viewModelScope.launch {
+            _isAddingCourseWords.value = true
+            try {
+                val units = repository.getOfflineUnitsForBook(bookNum)
+                val existingDeck = repository.getBookmarkedWordsList().map { it.word.trim().lowercase() }.toSet()
+                val gathered = mutableListOf<OfflineCurriculumWord>()
+                for (u in units) {
+                    if (gathered.size >= count) break
+                    val uWords = repository.getOfflineWordsForUnit(bookNum, u.unitNum)
+                    val picked = CourseProgressCalculator.selectNextAutoFeedWords(
+                        orderedUnitWords = uWords,
+                        existingDeckWordsLower = existingDeck + gathered.map { it.word.trim().lowercase() },
+                        batchSize = count - gathered.size
+                    )
+                    gathered.addAll(picked)
+                }
+                if (gathered.isEmpty()) {
+                    _snackbarMessage.tryEmit("You already added all words from this course!")
+                } else {
+                    val added = repository.addCurriculumWordsToDeck(gathered)
+                    loadActiveCourseUnitMap(bookNum)
+                    _snackbarMessage.tryEmit("Added +$added new words from your active course")
+                    if (launchSession) {
+                        startUnifiedStudySession(extraNewBonus = added)
+                    }
+                }
+            } finally {
+                _isAddingCourseWords.value = false
+            }
+        }
+    }
+
+    /**
+     * 1-tap "Study Unit Now": ensures the next batch of words from the unit are in the deck,
+     * then launches a focused full-screen FSRS session for that unit immediately.
+     */
+    fun studyUnitNow(
+        book: OfflineBook,
+        unit: OfflineUnit,
+        unitWords: List<OfflineCurriculumWord>,
+        batchSize: Int = _newCardsPerDay.value
+    ) {
+        viewModelScope.launch {
+            _isAddingCourseWords.value = true
+            try {
+                val existingDeck = repository.getBookmarkedWordsList().map { it.word.trim().lowercase() }.toSet()
+                val toAdd = CourseProgressCalculator.selectNextAutoFeedWords(unitWords, existingDeck, batchSize)
+                val added = if (toAdd.isNotEmpty()) repository.addCurriculumWordsToDeck(toAdd) else 0
+                val unitTag = OfflineDictionaryDatabase.buildDeckTagForUnit(book.shortTag, unit.unitNum)
+                startUnifiedStudySession(
+                    deckFilter = unitTag,
+                    deckTitle = "${book.shortTag} · ${unit.title}",
+                    extraNewBonus = maxOf(added, batchSize)
+                )
+            } finally {
+                _isAddingCourseWords.value = false
+            }
+        }
+    }
+
+    private fun computeUpdatedFsrsOrSm2Card(word: WordEntity, rating: String, today: Long): WordEntity {
+        val eBonus = _easyBonus.value
+        val sEase = _startingEase.value
+        val iModifier = _intervalModifier.value
+        val hMultiplier = _hardIntervalMultiplier.value
+        val currentEase = if (word.repetitions == 0) sEase else word.easeFactor
+        val hadRepetitions = word.repetitions > 0
+        val isAgain = rating.equals("Again", ignoreCase = true)
+        val newLapses = if (isAgain && hadRepetitions) word.lapses + 1 else word.lapses
+        val becameLeech = (newLapses >= _leechThreshold.value) && !word.isLeech
+        val newIsLeech = word.isLeech || becameLeech
+        val hadNewSuccessDay = !isAgain && (word.lastSuccessfulReviewDay == null || word.lastSuccessfulReviewDay != today)
+        val newDistinctDays = if (hadNewSuccessDay) word.distinctReviewDays + 1 else word.distinctReviewDays
+        val newLastSuccessfulReviewDay = if (!isAgain) today else word.lastSuccessfulReviewDay
+
+        if (becameLeech) {
+            showSnackbar("'${word.word}' is now marked as a Leech — try the AI Helper for a memory aid")
+        }
+
+        return if (_srsAlgorithm.value.equals("fsrs", ignoreCase = true)) {
+            val fsrsRating = when (rating) {
+                "Again" -> Rating.AGAIN
+                "Hard" -> Rating.HARD
+                "Good" -> Rating.GOOD
+                "Easy" -> Rating.EASY
+                else -> Rating.GOOD
+            }
+            val retentionFraction = (_targetRetention.value.toDouble() / 100.0).coerceIn(0.80, 0.97)
+            val scheduler = Scheduler.builder().desiredRetention(retentionFraction).build()
+            val currentFsrsCard = if (word.fsrsStability != null && word.fsrsDifficulty != null) {
+                val builder = Card.builder().stability(word.fsrsStability).difficulty(word.fsrsDifficulty)
+                if (word.fsrsDue != null) builder.due(java.time.Instant.ofEpochMilli(word.fsrsDue))
+                if (word.fsrsLastReview != null) builder.lastReview(java.time.Instant.ofEpochMilli(word.fsrsLastReview))
+                if (word.fsrsStep != null) builder.step(word.fsrsStep)
+                val parsedState = try {
+                    if (word.fsrsState != null) State.valueOf(word.fsrsState) else State.REVIEW
+                } catch (_: Exception) { State.REVIEW }
+                builder.state(parsedState).build()
+            } else {
+                Card.builder().build()
+            }
+            val nowInstant = java.time.Instant.now()
+            val result = scheduler.reviewCard(currentFsrsCard, fsrsRating, nowInstant)
+            val nextCard = result.card()
+            val dueInstant = nextCard.due ?: nowInstant
+            val calculatedDueDay = dueInstant.atZone(java.time.ZoneId.systemDefault()).toLocalDate().toEpochDay()
+            val rawDaysDiff = maxOf(0, (calculatedDueDay - today).toInt())
+            val modifiedDays = if (rawDaysDiff > 0) (rawDaysDiff * iModifier).toInt().coerceAtLeast(1) else 0
+            val nextDueEpochDay = if (fsrsRating == Rating.AGAIN) today else today + modifiedDays
+            word.copy(
+                repetitions = if (fsrsRating == Rating.AGAIN) 0 else word.repetitions + 1,
+                interval = modifiedDays,
+                lapses = newLapses,
+                isLeech = newIsLeech,
+                distinctReviewDays = newDistinctDays,
+                lastSuccessfulReviewDay = newLastSuccessfulReviewDay,
+                dueDate = nextDueEpochDay,
+                lastReviewed = today,
+                fsrsStability = nextCard.stability,
+                fsrsDifficulty = nextCard.difficulty,
+                fsrsDue = dueInstant.toEpochMilli(),
+                fsrsState = nextCard.state?.name,
+                fsrsStep = nextCard.step,
+                fsrsLastReview = nextCard.lastReview?.toEpochMilli() ?: nowInstant.toEpochMilli()
+            )
+        } else {
+            val baseInterval = when (rating) {
+                "Again" -> 0
+                "Hard" -> if (word.repetitions == 0) 1 else (word.interval * hMultiplier).toInt().coerceAtLeast(1)
+                "Good" -> when (word.repetitions) {
+                    0 -> 1
+                    1 -> 6
+                    else -> (word.interval * currentEase).toInt().coerceAtLeast(1)
+                }
+                "Easy" -> when (word.repetitions) {
+                    0 -> 4
+                    1 -> (6 * eBonus).toInt().coerceAtLeast(7)
+                    else -> (word.interval * currentEase * eBonus).toInt().coerceAtLeast(1)
+                }
+                else -> 1
+            }
+            val finalInterval = if (baseInterval > 0) (baseInterval * iModifier).toInt().coerceAtLeast(1) else 0
+            val nextEase = when (rating) {
+                "Again" -> (currentEase - 0.2f).coerceAtLeast(1.3f)
+                "Hard" -> (currentEase - 0.15f).coerceAtLeast(1.3f)
+                "Easy" -> currentEase + 0.15f
+                else -> currentEase
+            }
+            word.copy(
+                repetitions = if (isAgain) 0 else word.repetitions + 1,
+                easeFactor = nextEase,
+                interval = finalInterval,
+                lapses = newLapses,
+                isLeech = newIsLeech,
+                distinctReviewDays = newDistinctDays,
+                lastSuccessfulReviewDay = newLastSuccessfulReviewDay,
+                dueDate = today + finalInterval,
+                lastReviewed = today
+            )
+        }
+    }
+
+    // --- Smart Search StateFlows (Scope, Fuzzy, Word of the Day, CEFR, Back Stack, Occurrences) ---
+    private val _fuzzySuggestions = MutableStateFlow<List<OfflineSearchSuggestion>>(emptyList())
+    val fuzzySuggestions: StateFlow<List<OfflineSearchSuggestion>> = _fuzzySuggestions.asStateFlow()
+
+    private val _wordOfTheDay = MutableStateFlow<OfflineCurriculumWord?>(null)
+    val wordOfTheDay: StateFlow<OfflineCurriculumWord?> = _wordOfTheDay.asStateFlow()
+
+    private val _selectedCefrBrowse = MutableStateFlow<String?>(null)
+    val selectedCefrBrowse: StateFlow<String?> = _selectedCefrBrowse.asStateFlow()
+
+    private val _cefrBrowseWords = MutableStateFlow<List<OfflineCurriculumWord>>(emptyList())
+    val cefrBrowseWords: StateFlow<List<OfflineCurriculumWord>> = _cefrBrowseWords.asStateFlow()
+
+    private val _currentWordOccurrences = MutableStateFlow<List<OfflineCurriculumWord>>(emptyList())
+    val currentWordOccurrences: StateFlow<List<OfflineCurriculumWord>> = _currentWordOccurrences.asStateFlow()
+
+    private val _searchWordBackStack = MutableStateFlow<List<String>>(emptyList())
+    val searchWordBackStack: StateFlow<List<String>> = _searchWordBackStack.asStateFlow()
+
+    fun loadWordOfTheDay() {
+        viewModelScope.launch {
+            if (_wordOfTheDay.value == null) {
+                _wordOfTheDay.value = repository.getWordOfTheDay()
+            }
+        }
+    }
+
+    fun selectCefrBrowse(cefr: String?) {
+        _selectedCefrBrowse.value = cefr
+        if (cefr.isNullOrBlank()) {
+            _cefrBrowseWords.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            _cefrBrowseWords.value = repository.getWordsByCefr(cefr, limit = 40)
+        }
+    }
+
+    fun searchSuggestionsWithScope(query: String, booksOnly: Boolean = false) {
+        _searchQuery.value = query
+        suggestionsJob?.cancel()
+        val trimmed = query.trim()
+        if (trimmed.length < 2) {
+            _searchSuggestions.value = emptyList()
+            _fuzzySuggestions.value = emptyList()
+            return
+        }
+        suggestionsJob = viewModelScope.launch {
+            delay(90)
+            val hits = repository.searchOfflineSuggestions(trimmed, limit = 12, booksOnly = booksOnly)
+            _searchSuggestions.value = hits
+            _fuzzySuggestions.value = if (hits.isEmpty()) {
+                repository.findFuzzyOfflineSuggestions(trimmed, limit = 5)
+            } else {
+                emptyList()
+            }
+        }
+    }
+
+    fun openWordFromSearch(word: String, pushToBackStack: Boolean = true) {
+        val currentState = _searchUiState.value
+        if (pushToBackStack && currentState is SearchUiState.Success &&
+            !currentState.word.word.equals(word, ignoreCase = true)
+        ) {
+            _searchWordBackStack.value = (_searchWordBackStack.value + currentState.word.word).takeLast(12)
+        }
+        performSearch(word)
+        viewModelScope.launch {
+            _currentWordOccurrences.value = repository.findCurriculumOccurrences(word)
+        }
+    }
+
+    fun navigateBackInDictionary(): Boolean {
+        val stack = _searchWordBackStack.value
+        if (stack.isNotEmpty()) {
+            val prev = stack.last()
+            _searchWordBackStack.value = stack.dropLast(1)
+            performSearch(prev)
+            viewModelScope.launch {
+                _currentWordOccurrences.value = repository.findCurriculumOccurrences(prev)
+            }
+            return true
+        }
+        if (_searchUiState.value !is SearchUiState.Idle) {
+            _searchUiState.value = SearchUiState.Idle
+            _currentWordOccurrences.value = emptyList()
+            return true
+        }
+        return false
+    }
+
+    fun quickToggleStudyWord(word: String, translationAr: String = "") {
+        val clean = word.trim().lowercase()
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            val existing = repository.getLocalWord(clean)
+            if (existing != null) {
+                toggleBookmark(existing)
+                val msg = if (!existing.isBookmarked) "Added '${existing.word}' to Study Deck" else "Removed '${existing.word}' from Study Deck"
+                _snackbarMessage.tryEmit(msg)
+            } else {
+                val res = repository.searchAndFetchWord(clean)
+                res.onSuccess { entity ->
+                    repository.toggleBookmark(entity.word, true)
+                    _snackbarMessage.tryEmit("Added '${entity.word}' to Study Deck")
+                }.onFailure {
+                    if (translationAr.isNotBlank()) {
+                        val fallback = WordEntity(
+                            word = clean,
+                            definition = translationAr,
+                            arabicMeaning = translationAr,
+                            isBookmarked = true,
+                            tags = "Offline Dictionary"
+                        )
+                        repository.insertWordIfNotExist(fallback)
+                        repository.toggleBookmark(clean, true)
+                        _snackbarMessage.tryEmit("Added '$clean' to Study Deck")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Explicit on-demand AI Voice (Gemini TTS) for the per-word AI Helper button.
+     * Caches the audio permanently to filesDir/audio/ when generated so future replays are 100% offline.
+     */
+    fun speakWithAiVoice(text: String, cacheWordKey: String = text) {
+        val clean = text.trim()
+        if (clean.isEmpty()) return
+        viewModelScope.launch {
+            val geminiKeys = _geminiApiKeys.value.map { it.trim() }.filter { !isInvalidApiKey(it) }
+            if (geminiKeys.isEmpty()) {
+                _snackbarMessage.tryEmit("Add a Gemini API key in Settings for AI Voice — playing Natural Offline voice instead.")
+                setLastPronunciationSource("Device TTS")
+                speakWithTts(clean)
+                return@launch
+            }
+            if (isTtsNetworkThrottled()) {
+                _snackbarMessage.tryEmit("AI Voice cooldown active — playing Natural Offline voice instead.")
+                setLastPronunciationSource("Device TTS")
+                speakWithTts(clean)
+                return@launch
+            }
+            val audioBytes = fetchGeminiTtsAudio(clean)
+            if (audioBytes != null && audioBytes.isNotEmpty()) {
+                if (cacheWordKey.trim().lowercase() == clean.lowercase()) {
+                    checkAndSaveIfBookmarked(cacheWordKey, audioBytes)
+                }
+                playAudioBytes(audioBytes) {
+                    setLastPronunciationSource("Device TTS")
+                    speakWithTts(clean)
+                }
+            } else {
+                _snackbarMessage.tryEmit("AI Voice unavailable right now — using Natural Offline voice.")
+                setLastPronunciationSource("Device TTS")
+                speakWithTts(clean)
+            }
+        }
+    }
+
+    private suspend fun fetchOnlineDictionaryAudioBytes(word: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val entries = dictionaryAudioApiService.getWordEntries(word)
+            val urls = entries.flatMap { it.phonetics.orEmpty() }.mapNotNull { it.audio }
+            val preferUk = _selectedAccent.value.equals("UK", ignoreCase = true)
+            val chosenUrl = selectAudioUrl(urls, preferUk) ?: return@withContext null
+            val req = Request.Builder()
+                .url(chosenUrl)
+                .header("User-Agent", "RedeusDictionary/1.3")
+                .get()
+                .build()
+            ttsHttpClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext null
+                val bytes = resp.body?.bytes()
+                if (bytes != null && bytes.size > 128) bytes else null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG_TTS, "Online dictionary audio fetch failed for '$word': ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun saveAudioPermanentlyForWord(word: String, audioBytes: ByteArray) = withContext(Dispatchers.IO) {
+        try {
+            val cleanKey = word.trim().lowercase(Locale.ROOT)
+            val audioDir = File(getApplication<Application>().filesDir, "audio").apply { mkdirs() }
+            val safeName = cleanKey.replace(Regex("[^a-z0-9_-]"), "_").ifBlank { "word" }
+            val ext = if (audioBytes.size >= 4 && audioBytes[0] == 'R'.code.toByte() && audioBytes[1] == 'I'.code.toByte()) "wav" else "mp3"
+            val outFile = File(audioDir, "${safeName}_${cleanKey.hashCode().toUInt().toString(16)}.$ext")
+            outFile.writeBytes(audioBytes)
+            if (repository.getLocalWord(cleanKey) != null) {
+                repository.updateAudioPath(cleanKey, outFile.absolutePath)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG_TTS, "Failed to persist audio for '$word'", e)
+        }
+    }
+
     // --- Advanced Search & Filters State ---
     private val _filterSearchQuery = MutableStateFlow("")
     val filterSearchQuery: StateFlow<String> = _filterSearchQuery.asStateFlow()
@@ -1673,6 +2475,9 @@ class DictionaryViewModel(
         if (isCorrect) {
             speak(currentQ.targetWord.word)
         }
+        if (_quizCountsInFsrs.value) {
+            rateCard(currentQ.targetWord, if (isCorrect) "Good" else "Again")
+        }
     }
 
     fun restartQuiz() {
@@ -1729,6 +2534,9 @@ class DictionaryViewModel(
             currentStreak = newStreak
         )
         speak(target.word)
+        if (_quizCountsInFsrs.value) {
+            rateCard(target, if (isCorrect) "Good" else "Again")
+        }
     }
 
     fun restartSpelling() {
@@ -3274,12 +4082,20 @@ class DictionaryViewModel(
                     }
                 }
             }
-            else -> { // "auto"
-                // If not in cache and throttled, skip Gemini network call and fall back directly to device TTS
+            else -> { // "auto" — Strict Priority: 1) Natural Offline Neural -> 2) Online Dictionary Audio -> 3) AI TTS
+                // Priority 1: Natural Offline Neural TTS (instant, 100% offline, UK/US ranked via TtsVoiceSelector)
+                if (isTtsReady) {
+                    setLastPronunciationSource("Device TTS")
+                    _lastPronunciationLog.value = "Playback: Natural Offline Neural TTS (${_activeOfflineVoiceLabel.value})"
+                    speakWithTts(cleanWord)
+                    return
+                }
+
+                // If throttled and TTS isn't initialized yet, fail gracefully to Device TTS status
                 if (!isCached && isTtsNetworkThrottled()) {
                     val elapsed = System.currentTimeMillis() - lastTtsNetworkCallTimestamp
                     val remainingSec = ((ttsThrottleCooldownMs - elapsed + 999L) / 1000L).coerceAtLeast(1)
-                    Log.w(TAG_TTS, "Global TTS 30-second cooldown active (${remainingSec}s remaining). Skipping Gemini network call and falling back directly to device TTS for '$cleanWord'.")
+                    Log.w(TAG_TTS, "Global TTS 30-second cooldown active (${remainingSec}s remaining). Falling back to Device TTS for '$cleanWord'.")
                     _lastPronunciationLog.value = "TTS cooldown active (${remainingSec}s left) - fell back to device TTS"
                     setLastPronunciationSource("Device TTS")
                     speakWithTts(cleanWord)
@@ -3287,16 +4103,30 @@ class DictionaryViewModel(
                 }
 
                 viewModelScope.launch {
+                    // Priority 2: Online Dictionary Audio (UK/US MP3, cached permanently to filesDir/audio/)
+                    val onlineDictBytes = fetchOnlineDictionaryAudioBytes(cleanWord)
+                    if (onlineDictBytes != null && onlineDictBytes.isNotEmpty()) {
+                        saveAudioPermanentlyForWord(cleanWord, onlineDictBytes)
+                        setLastPronunciationSource("Online Dictionary")
+                        _lastPronunciationLog.value = "Playback: Online Dictionary Audio (${_selectedAccent.value}) — saved locally"
+                        playAudioBytes(onlineDictBytes) {
+                            setLastPronunciationSource("Device TTS")
+                            speakWithTts(cleanWord)
+                        }
+                        return@launch
+                    }
+
+                    // Priority 3: AI TTS (Gemini, cached permanently)
                     val audioBytes = fetchGeminiTtsAudio(cleanWord)
                     if (audioBytes != null && audioBytes.isNotEmpty()) {
                         checkAndSaveIfBookmarked(cleanWord, audioBytes)
                         playAudioBytes(audioBytes) {
-                            Log.w(TAG_TTS, "Gemini audio playback failed for '$cleanWord', silently falling back to device TTS. Reason: ${_lastPronunciationLog.value}")
+                            Log.w(TAG_TTS, "Gemini audio playback failed for '$cleanWord', falling back to device TTS.")
                             setLastPronunciationSource("Device TTS")
                             speakWithTts(cleanWord)
                         }
                     } else {
-                        Log.w(TAG_TTS, "Gemini TTS fetch failed for '$cleanWord', silently falling back to device TTS. Reason: ${_lastPronunciationLog.value}")
+                        Log.w(TAG_TTS, "Online & AI TTS unavailable for '$cleanWord', falling back to device TTS.")
                         setLastPronunciationSource("Device TTS")
                         speakWithTts(cleanWord)
                     }

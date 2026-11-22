@@ -724,9 +724,9 @@ fun SettingsScreen(
                             )
                             Text(
                                 text = when (pronunciationSource) {
-                                    "online" -> "Online (Gemini AI voice)"
-                                    "device" -> "Device voice (built-in Android TTS)"
-                                    else -> "Auto (Gemini AI first, fallback to device TTS)"
+                                    "online" -> "Online (Dictionary Audio / Gemini AI voice)"
+                                    "device" -> "Natural Offline only (built-in Android Neural TTS)"
+                                    else -> "Auto (1. Natural Offline Neural → 2. Online Dictionary → 3. AI Voice)"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant

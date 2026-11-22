@@ -2,6 +2,7 @@ package com.example
 
 import android.app.Application
 import android.content.Context
+import android.os.Looper
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.example.api.Candidate
@@ -23,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -343,6 +345,168 @@ class OfflineDictionaryIntegrationTest {
             val vm2 = DictionaryViewModel(app, repo)
             assertEquals("US", vm2.selectedAccent.value)
             vm2.setSelectedAccent("UK")
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `v2 offline database has zero template definitions or examples, zero broken HTML, and 100 percent Arabic`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val offlineDb = OfflineDictionaryDatabase.getInstance(context)
+        assertTrue(offlineDb.isAvailable())
+
+        val arabicRegex = Regex("[\u0600-\u06FF]")
+        var totalChecked = 0
+        for (book in offlineDb.getAllBooks()) {
+            val units = offlineDb.getUnitsForBook(book.bookNum)
+            for (unit in units) {
+                val words = offlineDb.getWordsForUnit(book.bookNum, unit.unitNum)
+                for (w in words) {
+                    totalChecked++
+                    assertTrue(
+                        "Empty/too-short definition for Book ${book.bookNum} '${w.word}': '${w.definitionEn}'",
+                        w.definitionEn.trim().length >= 8
+                    )
+                    assertFalse(
+                        "Template definition found for '${w.word}': '${w.definitionEn}'",
+                        w.definitionEn.contains("Key IELTS listening vocabulary", ignoreCase = true)
+                    )
+                    assertTrue(
+                        "Empty/too-short example for Book ${book.bookNum} '${w.word}': '${w.exampleEn}'",
+                        w.exampleEn.trim().length >= 10
+                    )
+                    assertFalse(
+                        "Template example found for '${w.word}': '${w.exampleEn}'",
+                        w.exampleEn.contains("frequently tested in IELTS", ignoreCase = true) ||
+                            w.exampleEn.contains("essential academic term for IELTS mastery", ignoreCase = true)
+                    )
+                    assertTrue(
+                        "Missing Arabic characters for '${w.word}': '${w.translationAr}'",
+                        arabicRegex.containsMatchIn(w.translationAr)
+                    )
+                    assertFalse(
+                        "Broken HTML/markup in '${w.word}'",
+                        w.definitionEn.contains("<") || w.definitionEn.contains(">") || w.exampleEn.contains("<")
+                    )
+                }
+            }
+        }
+        assertEquals(9591, totalChecked)
+    }
+
+    @Test
+    fun `smart offline search supports diacritic-free Arabic, English stems, fuzzy Did-You-Mean, and Word of the Day`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val offlineDb = OfflineDictionaryDatabase.getInstance(context)
+
+        // Arabic without tashkeel/hamza finds words whose DB translation has tashkeel (e.g. "يتخلّى" / "التّرك")
+        val arNoTashkeel = offlineDb.searchSuggestions("يتخلى", limit = 10)
+        assertTrue("Expected 'abandon' for normalized Arabic 'يتخلى'", arNoTashkeel.any { it.word.equals("abandon", ignoreCase = true) })
+
+        val arAlTark = offlineDb.searchSuggestions("الترك", limit = 10)
+        assertTrue("Expected match for normalized Arabic 'الترك'", arAlTark.isNotEmpty())
+
+        // English inflected stem finds base curriculum word
+        val stemHits = offlineDb.searchSuggestions("abandoned", limit = 10)
+        assertTrue("Expected stem 'abandon' when searching 'abandoned'", stemHits.any { it.word.equals("abandon", ignoreCase = true) })
+
+        // Fuzzy Did-You-Mean catches 1-char typo
+        val fuzzyHits = offlineDb.findFuzzySuggestions("abndon", limit = 5)
+        assertTrue("Expected fuzzy 'abandon' for typo 'abndon'", fuzzyHits.any { it.word.equals("abandon", ignoreCase = true) })
+
+        // Deterministic Word of the Day + CEFR browse
+        val wotd1 = offlineDb.getWordOfTheDay(20_500L)
+        val wotd2 = offlineDb.getWordOfTheDay(20_500L)
+        assertNotNull(wotd1)
+        assertEquals(wotd1!!.word, wotd2!!.word)
+
+        val a1Words = offlineDb.getWordsByCefr("A1", limit = 15)
+        assertTrue("Expected A1 curriculum words", a1Words.size >= 10)
+    }
+
+    @Test
+    fun `LocalWordImageStore serves bundled WebP images offline and persists new downloaded assets permanently`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val store = com.example.data.LocalWordImageStore.getInstance(context)
+
+        val bundledCount = store.getBundledImageCount()
+        assertTrue("Expected ~3,586 bundled Essential Book WebP images, got $bundledCount", bundledCount >= 3500)
+        assertTrue("Expected bundled offline photo for 'agree'", store.hasBundledImage("agree"))
+        assertEquals(com.example.data.LocalImageOrigin.BUNDLED_OFFLINE, store.getLocalImageOrigin("agree"))
+        val agreeBytes = store.getBundledImageBytes("agree")
+        assertNotNull(agreeBytes)
+        assertTrue("Bundled WebP bytes should be valid size", agreeBytes!!.size > 500)
+
+        // Simulate saving a newly downloaded photo permanently for a word with no bundled image
+        val testWord = "custom_offline_asset_test"
+        store.deleteSavedPermanentImage(testWord)
+        assertEquals(com.example.data.LocalImageOrigin.NONE, store.getLocalImageOrigin(testWord))
+
+        val savedFile = store.saveImageBytesPermanently(testWord, agreeBytes)
+        assertNotNull(savedFile)
+        assertTrue(savedFile!!.exists())
+        assertTrue(store.hasSavedPermanentImage(testWord))
+        assertEquals(com.example.data.LocalImageOrigin.SAVED_PERMANENT, store.getLocalImageOrigin(testWord))
+
+        // Clean up test artifact
+        store.deleteSavedPermanentImage(testWord)
+    }
+
+    @Test
+    fun `unified study session rate and undo restores exact Room word and review log state`() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repo = WordRepository(db.wordDao(), failingGeminiService, context = app)
+            val today = java.time.LocalDate.now().toEpochDay()
+            val w1 = WordEntity(word = "agree", definition = "To agree", arabicMeaning = "يوافق", isBookmarked = true, dueDate = today)
+            val w2 = WordEntity(word = "arrive", definition = "To arrive", arabicMeaning = "يصل", isBookmarked = true, dueDate = today)
+            db.wordDao().insertWord(w1)
+            db.wordDao().insertWord(w2)
+
+            val vm = DictionaryViewModel(app, repo)
+            vm.startUnifiedStudySession()
+            var tries = 0
+            while (vm.activeStudySession.value == null && tries < 60) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(15)
+                tries++
+            }
+            val initial = vm.activeStudySession.value
+            assertNotNull("Expected active study session to start", initial)
+            assertEquals(2, initial!!.queue.size)
+            val firstWordName = initial.currentCard!!.word
+
+            // Rate Good
+            vm.rateSessionCard("Good")
+            tries = 0
+            while ((vm.activeStudySession.value?.completedCount ?: 0) < 1 && tries < 60) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(15)
+                tries++
+            }
+            assertEquals(1, vm.activeStudySession.value!!.completedCount)
+            assertTrue(vm.activeStudySession.value!!.canUndo)
+            val logsAfterRate = db.wordDao().getReviewLogsForWordList(firstWordName)
+            assertEquals(1, logsAfterRate.size)
+
+            // Undo!
+            vm.undoLastSessionRating()
+            tries = 0
+            while ((vm.activeStudySession.value?.completedCount ?: 1) != 0 && tries < 60) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(15)
+                tries++
+            }
+            assertEquals(0, vm.activeStudySession.value!!.completedCount)
+            assertEquals(firstWordName, vm.activeStudySession.value!!.currentCard!!.word)
+            val restoredWord = db.wordDao().getWord(firstWordName)!!
+            assertEquals("Repetitions must revert to 0 after Undo", 0, restoredWord.repetitions)
+            val logsAfterUndo = db.wordDao().getReviewLogsForWordList(firstWordName)
+            assertEquals("Inserted review log must be removed after Undo", 0, logsAfterUndo.size)
         } finally {
             db.close()
         }
