@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.lexilearn.bzwptq"
     minSdk = 24
     targetSdk = 36
-    versionCode = 4
-    versionName = "1.4.0"
+    versionCode = 5
+    versionName = "1.5.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -39,9 +39,17 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
+      isDebuggable = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      val releaseKeystoreFile = file(System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks")
+      val hasReleaseKeystore = releaseKeystoreFile.exists() && !System.getenv("STORE_PASSWORD").isNullOrBlank()
+      signingConfig = if (hasReleaseKeystore) {
+        signingConfigs.getByName("release")
+      } else {
+        signingConfigs.getByName("debug")
+      }
     }
     debug {
       applicationIdSuffix = ".m3"

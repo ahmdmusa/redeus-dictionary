@@ -314,9 +314,7 @@ class WordRepository(
             ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_api_key", null)
             ?: ""
         val hasValidKey = userKey.isNotBlank() && userKey != "MY_PEXELS_API_KEY"
-        if (!hasValidKey && java.lang.reflect.Proxy.isProxyClass(pexelsApiService.javaClass)) {
-            return@withContext CyclePhotoResult.Error(IllegalStateException("Pexels API key is not configured"))
-        }
+        val isRealRetrofitProxy = java.lang.reflect.Proxy.isProxyClass(pexelsApiService.javaClass)
         val pexelsKey = if (hasValidKey) userKey else "test_pexels_key"
 
         val effectiveQuerySource = querySourceOverride
@@ -342,10 +340,6 @@ class WordRepository(
         }
 
         // 2. Query building based on pexels_query_source:
-        // - "word": use the raw word/phrase directly as the query (no extraction needed)
-        // - "definition": extract 2-4 concrete visual keywords from the definition field text
-        // - "image_prompt": extract 2-4 concrete visual keywords from imagePrompt
-        // (In all three cases, explicitly exclude the example field from ever being used)
         val query = when {
             !derivedQueryOverride.isNullOrBlank() -> derivedQueryOverride.trim()
             !cachedQuery.isNullOrBlank() -> cachedQuery
@@ -358,74 +352,106 @@ class WordRepository(
             }
         }
 
-        if (query.isBlank()) {
+        val effectiveWebQuery = query.ifBlank { cleanWord }
+
+        if (query.isBlank() && !isRealRetrofitProxy) {
             Log.w("WordRepository", "No query could be derived using source '$effectiveQuerySource' for '$cleanWord'")
             return@withContext CyclePhotoResult.NoMoreResults
         }
 
-        wordDerivedQueries[cacheKey] = query
-        wordDerivedQueries[cleanWord] = query
-        prefs?.edit()?.apply {
-            putString("pexels_query_${effectiveQuerySource}_$cleanWord", query)
-            putString("pexels_query_$cleanWord", query)
-            if (imagePrompt.isNotBlank()) {
-                putString("ai_prompt_$cleanWord", imagePrompt)
+        if (query.isNotBlank()) {
+            wordDerivedQueries[cacheKey] = query
+            wordDerivedQueries[cleanWord] = query
+            prefs?.edit()?.apply {
+                putString("pexels_query_${effectiveQuerySource}_$cleanWord", query)
+                putString("pexels_query_$cleanWord", query)
+                if (imagePrompt.isNotBlank()) {
+                    putString("ai_prompt_$cleanWord", imagePrompt)
+                }
+                apply()
             }
-            apply()
         }
 
-        try {
-            // 3. Send those keywords as the Pexels query parameter
-            Log.d("WordRepository", "Searching Pexels for '$cleanWord' (query: '$query', page=$page)")
-            var searchResponse = pexelsApiService.searchPhotos(
-                apiKey = pexelsKey,
-                query = query,
-                perPage = 1,
-                page = page
-            )
-            var photoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
-
-            if (!photoUrl.isNullOrBlank()) {
-                context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, photoUrl) }
-                return@withContext CyclePhotoResult.Success(photoUrl, page)
-            }
-
-            // If page > 1 and returned no results, wrap around to page 1
-            if (page > 1) {
-                Log.d("WordRepository", "No results on page $page for query '$query'. Wrapping around to page 1.")
-                val wrapResponse = pexelsApiService.searchPhotos(
+        // 3a. Try Pexels if user configured a valid key OR under unit-test fake service
+        var lastPexelsError: Exception? = null
+        if (hasValidKey || !isRealRetrofitProxy) {
+            try {
+                Log.d("WordRepository", "Searching Pexels for '$cleanWord' (query: '$query', page=$page)")
+                val searchResponse = pexelsApiService.searchPhotos(
                     apiKey = pexelsKey,
                     query = query,
                     perPage = 1,
-                    page = 1
-                )
-                val wrapUrl = wrapResponse.photos?.firstOrNull()?.src?.medium
-                if (!wrapUrl.isNullOrBlank()) {
-                    context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, wrapUrl) }
-                    return@withContext CyclePhotoResult.WrappedToBeginning(wrapUrl)
-                }
-            }
-
-            // Fallback: 2-word query (still derived strictly from imagePrompt keywords)
-            val twoWordQuery = query.split(" ").take(2).joinToString(" ")
-            if (twoWordQuery.isNotBlank() && twoWordQuery != query) {
-                val fallbackResponse = pexelsApiService.searchPhotos(
-                    apiKey = pexelsKey,
-                    query = twoWordQuery,
-                    perPage = 1,
                     page = page
                 )
-                val fallbackUrl = fallbackResponse.photos?.firstOrNull()?.src?.medium
-                if (!fallbackUrl.isNullOrBlank()) {
-                    context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, fallbackUrl) }
-                    return@withContext CyclePhotoResult.Success(fallbackUrl, page)
+                val photoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
+
+                if (!photoUrl.isNullOrBlank()) {
+                    context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, photoUrl) }
+                    return@withContext CyclePhotoResult.Success(photoUrl, page)
+                }
+
+                if (page > 1) {
+                    val wrapResponse = pexelsApiService.searchPhotos(
+                        apiKey = pexelsKey,
+                        query = query,
+                        perPage = 1,
+                        page = 1
+                    )
+                    val wrapUrl = wrapResponse.photos?.firstOrNull()?.src?.medium
+                    if (!wrapUrl.isNullOrBlank()) {
+                        context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, wrapUrl) }
+                        return@withContext CyclePhotoResult.WrappedToBeginning(wrapUrl)
+                    }
+                }
+
+                val twoWordQuery = query.split(" ").take(2).joinToString(" ")
+                if (twoWordQuery.isNotBlank() && twoWordQuery != query) {
+                    val fallbackResponse = pexelsApiService.searchPhotos(
+                        apiKey = pexelsKey,
+                        query = twoWordQuery,
+                        perPage = 1,
+                        page = page
+                    )
+                    val fallbackUrl = fallbackResponse.photos?.firstOrNull()?.src?.medium
+                    if (!fallbackUrl.isNullOrBlank()) {
+                        context?.let { LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, fallbackUrl) }
+                        return@withContext CyclePhotoResult.Success(fallbackUrl, page)
+                    }
+                }
+            } catch (e: Exception) {
+                lastPexelsError = e
+                Log.w("WordRepository", "Pexels photo search failed for '$cleanWord' at page $page: ${e.message}")
+                if (!isRealRetrofitProxy) {
+                    return@withContext CyclePhotoResult.Error(e)
                 }
             }
+        }
 
+        // 3b. Free Keyless Web Photo Fallback (Wikipedia + Wikimedia Commons) -> saves permanently offline!
+        if (isRealRetrofitProxy && effectiveWebQuery.isNotBlank()) {
+            try {
+                val webPhotoUrl = com.example.api.WebPhotoFallbackClient.fetchWebPhotoUrl(effectiveWebQuery, page)
+                    ?: if (effectiveWebQuery != cleanWord) {
+                        com.example.api.WebPhotoFallbackClient.fetchWebPhotoUrl(cleanWord, page)
+                    } else null
+                if (!webPhotoUrl.isNullOrBlank()) {
+                    val savedFile = context?.let {
+                        LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, webPhotoUrl)
+                    }
+                    if (savedFile != null || context == null) {
+                        return@withContext CyclePhotoResult.Success(webPhotoUrl, page)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("WordRepository", "Keyless web photo fallback failed for '$cleanWord': ${e.message}")
+                if (lastPexelsError == null) lastPexelsError = e
+            }
+        }
+
+        if (lastPexelsError != null) {
+            CyclePhotoResult.Error(lastPexelsError)
+        } else {
             CyclePhotoResult.NoMoreResults
-        } catch (e: Exception) {
-            Log.e("WordRepository", "Pexels photo search failed for '$cleanWord' at page $page", e)
-            CyclePhotoResult.Error(e)
         }
     }
 
@@ -640,19 +666,19 @@ class WordRepository(
                     if (effectiveImageSource == "web") {
                         val hasValidKey = effectivePexelsKey.isNotBlank() && effectivePexelsKey != "MY_PEXELS_API_KEY"
                         val isProxy = java.lang.reflect.Proxy.isProxyClass(pexelsApiService.javaClass)
+                        val effectivePexelsQuerySource = pexelsQuerySource
+                            ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_query_source", "word")
+                            ?: "word"
+                        val derivedQuery = when (effectivePexelsQuerySource) {
+                            "word" -> cleanWord
+                            "definition" -> extractPexelsKeywords(apiResponse.definition)
+                            else -> extractPexelsKeywords(cleanAiPrompt) // "image_prompt"
+                        }
+
+                        var fetchedPhotoUrl: String? = null
                         if (hasValidKey || !isProxy) {
                             val pexelsKey = if (hasValidKey) effectivePexelsKey else "test_pexels_key"
                             try {
-                                val effectivePexelsQuerySource = pexelsQuerySource
-                                    ?: context?.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)?.getString("pexels_query_source", "word")
-                                    ?: "word"
-
-                                val derivedQuery = when (effectivePexelsQuerySource) {
-                                    "word" -> cleanWord
-                                    "definition" -> extractPexelsKeywords(apiResponse.definition)
-                                    else -> extractPexelsKeywords(cleanAiPrompt) // "image_prompt"
-                                }
-
                                 if (derivedQuery.isNotBlank()) {
                                     wordDerivedQueries[cleanWord] = derivedQuery
                                     wordDerivedQueries["$cleanWord:$effectivePexelsQuerySource"] = derivedQuery
@@ -661,49 +687,58 @@ class WordRepository(
                                         ?.apply()
                                     Log.d("WordRepository", "Pexels search using derived query '$derivedQuery' (source: '$effectivePexelsQuerySource', word: '$cleanWord')")
 
-                                    // 3. Send those keywords as the Pexels query parameter
                                     var searchResponse = pexelsApiService.searchPhotos(
                                         apiKey = pexelsKey,
                                         query = derivedQuery,
                                         perPage = 1,
                                         page = 1
                                     )
-                                    var photoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
+                                    fetchedPhotoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
 
-                                    // Fall back to 2-word query if 3+ keywords returned no results
-                                    if (photoUrl.isNullOrBlank()) {
+                                    if (fetchedPhotoUrl.isNullOrBlank()) {
                                         val twoWordQuery = derivedQuery.split(" ").take(2).joinToString(" ")
                                         if (twoWordQuery.isNotBlank() && twoWordQuery != derivedQuery) {
-                                            Log.d("WordRepository", "Pexels fallback to 2-word query: '$twoWordQuery'")
                                             searchResponse = pexelsApiService.searchPhotos(
                                                 apiKey = pexelsKey,
                                                 query = twoWordQuery,
                                                 perPage = 1
                                             )
-                                            photoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
+                                            fetchedPhotoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
                                         }
                                     }
 
-                                    // Fall back to the word itself if derived query returned no results
-                                    if (photoUrl.isNullOrBlank() && cleanWord != derivedQuery) {
-                                        Log.d("WordRepository", "Pexels fallback to word itself: '$cleanWord'")
+                                    if (fetchedPhotoUrl.isNullOrBlank() && cleanWord != derivedQuery) {
                                         searchResponse = pexelsApiService.searchPhotos(
                                             apiKey = pexelsKey,
                                             query = cleanWord,
                                             perPage = 1
                                         )
-                                        photoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
-                                    }
-
-                                    if (!photoUrl.isNullOrBlank()) {
-                                        finalImagePrompt = photoUrl
+                                        fetchedPhotoUrl = searchResponse.photos?.firstOrNull()?.src?.medium
                                     }
                                 }
                             } catch (e: Exception) {
-                                Log.w("WordRepository", "Pexels photo search failed, falling back to AI prompt", e)
+                                Log.w("WordRepository", "Pexels photo search failed, trying keyless web fallback", e)
                             }
-                        } else {
-                            Log.d("WordRepository", "Pexels API key not configured, falling back to AI generated prompt")
+                        }
+
+                        // Free keyless web photo fallback (Wikipedia + Wikimedia Commons) when online without Pexels key
+                        if (fetchedPhotoUrl.isNullOrBlank() && isProxy) {
+                            val localStore = context?.let { LocalWordImageStore.getInstance(it) }
+                            val alreadyHasLocal = localStore?.hasAnyLocalImage(cleanWord) == true
+                            if (!alreadyHasLocal) {
+                                val fallbackQuery = derivedQuery.ifBlank { cleanWord }
+                                fetchedPhotoUrl = com.example.api.WebPhotoFallbackClient.fetchWebPhotoUrl(fallbackQuery, 1)
+                                    ?: if (fallbackQuery != cleanWord) {
+                                        com.example.api.WebPhotoFallbackClient.fetchWebPhotoUrl(cleanWord, 1)
+                                    } else null
+                            }
+                        }
+
+                        if (!fetchedPhotoUrl.isNullOrBlank()) {
+                            finalImagePrompt = fetchedPhotoUrl
+                            context?.let {
+                                LocalWordImageStore.getInstance(it).downloadAndSavePermanently(cleanWord, fetchedPhotoUrl)
+                            }
                         }
                     }
 
@@ -857,48 +892,62 @@ class WordRepository(
         apiKey: String = "",
         openRouterApiKey: String = "",
         geminiApiKeys: List<String> = emptyList(),
-        geminiModel: String = "gemini-3.5-flash-lite"
+        geminiModel: String = "gemini-3.5-flash-lite",
+        readingStyle: com.example.domain.ReadingStyle = com.example.domain.ReadingStyle.IELTS_ACADEMIC
     ): Result<ReadingPassageResponse> = withContext(Dispatchers.IO) {
         val cefrLevel = when (readingLevel) {
-            1, 2 -> "A2"
-            3 -> "A2-B1 transitional"
-            4, 5 -> "B1"
-            else -> "A2"
+            1 -> "A1-A2"
+            2 -> "A2"
+            3 -> "B1"
+            4 -> "B2"
+            5 -> "C1"
+            else -> "B1"
         }
+        val cleanTargets = targetWords.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(8)
+        val isIelts = readingStyle == com.example.domain.ReadingStyle.IELTS_ACADEMIC
 
-        val systemPrompt = """
+        val systemPrompt = if (isIelts) {
+            """
+            You are an expert IELTS Academic Reading exam writer and English coach.
+            Generate an authentic, engaging IELTS Academic Reading mini-passage (180-240 words, starting with a concise Title line), exactly 5 IELTS-style multiple-choice reading comprehension questions (Main Idea, True/False/Not Given phrased as 4 options, Inference, Vocabulary-in-Context, and Author's Purpose), and exactly 2 multiple-choice grammar questions grounded directly in sentences from the passage.
+            You MUST return ONLY raw, valid JSON conforming strictly to the specified JSON schema. Do NOT wrap your output in markdown code blocks.
+            """.trimIndent()
+        } else {
+            """
             You are an expert English language learning and reading comprehension assistant.
             Generate an engaging, educational short reading passage, exactly 5 multiple-choice reading comprehension questions, and exactly 2 multiple-choice grammar questions based on structures in the passage.
             You MUST return a response that conforms strictly to the specified JSON schema.
             Return ONLY raw, valid JSON. Do NOT wrap your output in markdown code blocks (e.g. do not use ```json or ```).
-        """.trimIndent()
+            """.trimIndent()
+        }
 
-        val userPrompt = if (targetWords.isNotEmpty()) {
+        val userPrompt = if (isIelts) {
+            val vocabSection = if (cleanTargets.isNotEmpty()) {
+                """
+                Target vocabulary from the learner's recent study session (weave ALL or as many as naturally fit into the passage, using exact or inflected forms in clear academic context):
+                ${cleanTargets.joinToString(", ")}
+                """.trimIndent()
+            } else {
+                "Choose a compelling IELTS Academic topic (e.g., urban architecture, cognitive science, sustainable energy, marine biology, or digital habits)."
+            }
             """
-            Create a reading comprehension and grammar check exercise for an English learner at CEFR level: $cefrLevel.
-            Use ONLY the following 1-2 vocabulary word(s) naturally in the story — do not force in extra vocabulary, prioritize a coherent, natural short story over vocabulary density. If a word doesn't fit naturally, use it just once in a clear, well-formed sentence rather than repeating or over-emphasizing it.
-
-            Vocabulary word(s) to incorporate:
-            ${targetWords.joinToString(", ")}
+            Create an authentic IELTS Academic Reading practice passage calibrated for CEFR $cefrLevel.
+            $vocabSection
 
             Requirements:
-            1. "passage": An 80-120 word short story or paragraph at $cefrLevel level naturally incorporating the specified vocabulary word(s). Prioritize a coherent, natural story over vocabulary density.
-            2. "questions": Exactly 5 multiple-choice questions mixing reading comprehension of the passage's content with meaning-in-context questions for the embedded vocabulary word(s). No grammar questions in this list.
+            1. "passage": A well-structured 180-240 word IELTS Academic Reading text with 2-3 coherent paragraphs (start with a short Title line followed by a blank line). Prioritize natural, authentic IELTS Academic style while meaningfully weaving in the target vocabulary words.
+            2. "questions": Exactly 5 multiple-choice questions in IELTS style (e.g. main idea, specific detail / True-False-Not Given style, vocabulary-in-context for the target words, inference, and writer's attitude).
             Each question MUST have:
-            - "question": Clear question text
+            - "question": Clear IELTS-style question text
             - "options": An array of exactly 4 distinct options
             - "correctAnswer": Exact string matching one of the 4 options
-            - "explanation": Short, clear explanation of why the correct answer is right
-            3. "grammarQuestions": Exactly 2 multiple-choice grammar questions, each based on an actual grammatical structure that genuinely appears in the passage (such as a verb tense, a conditional, an article, a preposition, subject-verb agreement, etc.). Pick the structure from the passage itself; NEVER invent one that isn't present in the text.
-            Each grammar question MUST have:
-            - "question": Clear question text testing the grammatical structure from the passage
-            - "options": An array of exactly 4 distinct options
-            - "correctAnswer": Exact string matching one of the 4 options
-            - "explanation": State the grammar rule being tested in plain, simple terms matching the user's current CEFR level ($cefrLevel). Explain why the correct option is right AND why common mistake options for that rule are wrong (e.g. "We use 'have been' here because the action started in the past and is still continuing (present perfect continuous). 'Was' would only be correct if the action had already finished.").
+            - "explanation": Clear, helpful explanation quoting the relevant clue from the passage
+            3. "grammarQuestions": Exactly 2 multiple-choice grammar questions testing actual grammatical structures present in the passage (e.g. passive voice, relative clauses, conditionals, cohesive linkers, or verb tense).
+            Each grammar question MUST have "question", "options" (4 choices), "correctAnswer", and a plain-English "explanation".
 
             JSON schema:
             {
-              "passage": "80-120 word short story or paragraph",
+              "passage": "Title\n\nParagraph 1...\n\nParagraph 2...",
               "questions": [
                 {
                   "question": "question text",
@@ -912,33 +961,56 @@ class WordRepository(
                   "question": "grammar question text",
                   "options": ["option 1", "option 2", "option 3", "option 4"],
                   "correctAnswer": "exact matching option",
-                  "explanation": "grammar rule explanation why correct and why common mistakes are wrong"
+                  "explanation": "grammar rule explanation"
+                }
+              ]
+            }
+            """.trimIndent()
+        } else if (cleanTargets.isNotEmpty()) {
+            """
+            Create a reading comprehension and grammar check exercise for an English learner at CEFR level: $cefrLevel.
+            Weave these target vocabulary words naturally into a coherent, enjoyable short story:
+            ${cleanTargets.joinToString(", ")}
+
+            Requirements:
+            1. "passage": A 120-160 word engaging short story at $cefrLevel level naturally incorporating the specified vocabulary words.
+            2. "questions": Exactly 5 multiple-choice questions mixing reading comprehension with meaning-in-context for the embedded vocabulary words.
+            Each question MUST have "question", "options" (4 choices), "correctAnswer", and "explanation".
+            3. "grammarQuestions": Exactly 2 multiple-choice grammar questions based on actual grammatical structures in the passage, each with "question", "options" (4 choices), "correctAnswer", and "explanation".
+
+            JSON schema:
+            {
+              "passage": "120-160 word short story",
+              "questions": [
+                {
+                  "question": "question text",
+                  "options": ["option 1", "option 2", "option 3", "option 4"],
+                  "correctAnswer": "exact matching option",
+                  "explanation": "explanation text"
+                }
+              ],
+              "grammarQuestions": [
+                {
+                  "question": "grammar question text",
+                  "options": ["option 1", "option 2", "option 3", "option 4"],
+                  "correctAnswer": "exact matching option",
+                  "explanation": "grammar rule explanation"
                 }
               ]
             }
             """.trimIndent()
         } else {
             """
-            Create a reading comprehension and grammar check exercise for an English learner at CEFR level: $cefrLevel on an engaging, relatable everyday topic (such as travel, daily habits, friendship, hobbies, or community).
+            Create a reading comprehension and grammar check exercise for an English learner at CEFR level: $cefrLevel on an engaging, relatable everyday topic.
 
             Requirements:
-            1. "passage": An 80-120 word short story or paragraph at $cefrLevel level with natural, accessible language.
-            2. "questions": Exactly 5 multiple-choice questions focusing purely on reading comprehension of the passage's content (e.g. key details, main theme, character motives, cause and effect). Do NOT ask about specific-word meaning-in-context, since no target vocabulary was embedded. No grammar questions in this list.
-            Each question MUST have:
-            - "question": Clear question text
-            - "options": An array of exactly 4 distinct options
-            - "correctAnswer": Exact string matching one of the 4 options
-            - "explanation": Short, clear explanation of why the correct answer is right
-            3. "grammarQuestions": Exactly 2 multiple-choice grammar questions, each based on an actual grammatical structure that genuinely appears in the passage (such as a verb tense, a conditional, an article, a preposition, subject-verb agreement, etc.). Pick the structure from the passage itself; NEVER invent one that isn't present in the text.
-            Each grammar question MUST have:
-            - "question": Clear question text testing the grammatical structure from the passage
-            - "options": An array of exactly 4 distinct options
-            - "correctAnswer": Exact string matching one of the 4 options
-            - "explanation": State the grammar rule being tested in plain, simple terms matching the user's current CEFR level ($cefrLevel). Explain why the correct option is right AND why common mistake options for that rule are wrong (e.g. "We use 'have been' here because the action started in the past and is still continuing (present perfect continuous). 'Was' would only be correct if the action had already finished.").
+            1. "passage": A 120-160 word short story or paragraph at $cefrLevel level.
+            2. "questions": Exactly 5 multiple-choice reading comprehension questions, each with "question", "options" (4 choices), "correctAnswer", and "explanation".
+            3. "grammarQuestions": Exactly 2 multiple-choice grammar questions grounded in the passage, each with "question", "options" (4 choices), "correctAnswer", and "explanation".
 
             JSON schema:
             {
-              "passage": "80-120 word short story or paragraph",
+              "passage": "120-160 word short story",
               "questions": [
                 {
                   "question": "question text",
@@ -952,7 +1024,7 @@ class WordRepository(
                   "question": "grammar question text",
                   "options": ["option 1", "option 2", "option 3", "option 4"],
                   "correctAnswer": "exact matching option",
-                  "explanation": "grammar rule explanation why correct and why common mistakes are wrong"
+                  "explanation": "grammar rule explanation"
                 }
               ]
             }
@@ -995,8 +1067,8 @@ class WordRepository(
                         return@withContext Result.failure(Exception("Incomplete reading passage response generated"))
                     }
 
-                    if (targetWords.isNotEmpty()) {
-                        recordWordsUsedInReading(targetWords)
+                    if (cleanTargets.isNotEmpty()) {
+                        recordWordsUsedInReading(cleanTargets)
                     }
 
                     val typedQuestions = passageResponse.questions.map { it.copy(type = "comprehension") }
@@ -1027,17 +1099,36 @@ class WordRepository(
         return prefs.getBoolean("gemini_manually_locked", false)
     }
 
-    private fun isHttp429(e: Throwable): Boolean {
+    private fun extractHttpCode(e: Throwable): Int? {
         var cur: Throwable? = e
         while (cur != null) {
-            if (cur is retrofit2.HttpException && cur.code() == 429) return true
-            val msg = cur.message?.lowercase() ?: ""
-            if (msg.contains("429") || msg.contains("resource_exhausted") || msg.contains("quota")) {
-                return true
-            }
+            if (cur is retrofit2.HttpException) return cur.code()
             cur = cur.cause
         }
-        return false
+        return null
+    }
+
+    private fun isHttp429(e: Throwable): Boolean {
+        if (extractHttpCode(e) == 429) return true
+        val msg = e.message?.lowercase() ?: ""
+        return msg.contains("429") || msg.contains("resource_exhausted") || msg.contains("quota")
+    }
+
+    private fun isRetryableModelFailure(e: Throwable): Boolean {
+        val code = extractHttpCode(e)
+        if (code != null) {
+            return code == 404 || code == 429 || code == 500 || code == 502 || code == 503 || code == 504
+        }
+        if (e is java.net.SocketTimeoutException || e is java.io.IOException) return true
+        val msg = e.message?.lowercase() ?: ""
+        return msg.contains("503") || msg.contains("404") || msg.contains("429") ||
+            msg.contains("high demand") || msg.contains("overloaded") || msg.contains("timeout") ||
+            msg.contains("no longer available")
+    }
+
+    private fun isAuthFailure(e: Throwable): Boolean {
+        val code = extractHttpCode(e)
+        return code == 401 || code == 403
     }
 
     private suspend fun fetchAiTextWithFallback(
@@ -1054,32 +1145,51 @@ class WordRepository(
 
         if (!isLocked && validGeminiKeys.isNotEmpty()) {
             var lastGeminiEx: Exception? = null
-            val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-3.5-flash-lite" }
+            val modelChain = resolveGeminiModelChain(geminiModel)
 
-            for ((idx, key) in validGeminiKeys.withIndex()) {
-                try {
-                    Log.d("WordRepository", "[$tag] Trying Gemini key ${idx + 1}/${validGeminiKeys.size} with model '$effectiveModel'...")
-                    val response = apiService.generateContentWithModel(effectiveModel, key, geminiRequest)
-                    val candidateText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                    if (!candidateText.isNullOrBlank()) {
-                        Log.d("WordRepository", "[$tag] Response successfully served by Gemini (key ${idx + 1})")
-                        recordAiProviderUsage("gemini")
-                        return Result.success(candidateText)
-                    }
-                    throw Exception("No text content received from Gemini model")
-                } catch (geminiEx: Exception) {
-                    lastGeminiEx = geminiEx
-                    val is429 = isHttp429(geminiEx)
-                    Log.w("WordRepository", "[$tag] Gemini key ${idx + 1} failed: ${geminiEx.message} (is429=$is429)")
+            keyLoop@ for ((idx, key) in validGeminiKeys.withIndex()) {
+                var keyHit429 = false
+                for ((mIdx, candidateModel) in modelChain.withIndex()) {
+                    try {
+                        Log.d("WordRepository", "[$tag] Trying Gemini key ${idx + 1}/${validGeminiKeys.size} model '$candidateModel'...")
+                        val response = apiService.generateContentWithModel(candidateModel, key, geminiRequest)
+                        val candidateText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                        if (!candidateText.isNullOrBlank()) {
+                            Log.d("WordRepository", "[$tag] Served by Gemini key ${idx + 1} ($candidateModel)")
+                            recordAiProviderUsage("gemini")
+                            return Result.success(candidateText)
+                        }
+                        throw Exception("No text content received from Gemini model $candidateModel")
+                    } catch (geminiEx: Exception) {
+                        lastGeminiEx = geminiEx
+                        val code = extractHttpCode(geminiEx)
+                        val is429 = isHttp429(geminiEx)
+                        val retryableModel = isRetryableModelFailure(geminiEx)
+                        Log.w("WordRepository", "[$tag] Gemini key ${idx + 1} model '$candidateModel' failed: ${geminiEx.message} (code=$code, retryable=$retryableModel)")
 
-                    // If HTTP 429 and there are remaining keys, try the next key in order
-                    if (is429 && idx < validGeminiKeys.size - 1) {
-                        Log.w("WordRepository", "[$tag] HTTP 429 rate limit encountered; trying next Gemini key...")
-                        continue
-                    } else {
-                        // Either not 429, or all keys exhausted; break and fall through to OpenRouter
-                        break
+                        if (is429) keyHit429 = true
+
+                        if (isAuthFailure(geminiEx)) {
+                            // Bad/unauthorized key -> move to next key if any
+                            break
+                        }
+
+                        if (retryableModel && mIdx < modelChain.lastIndex) {
+                            // Transient 503 high demand / 404 retired model / 429 per-model quota -> seamlessly failover to next model!
+                            if (code == 503) {
+                                kotlinx.coroutines.delay(300L)
+                            }
+                            continue
+                        } else {
+                            break
+                        }
                     }
+                }
+                if (keyHit429 && idx < validGeminiKeys.lastIndex) {
+                    continue@keyLoop
+                }
+                if (!isAuthFailure(lastGeminiEx ?: break) && !keyHit429) {
+                    break@keyLoop
                 }
             }
             Log.w("WordRepository", "[$tag] Gemini calls failed/exhausted (${lastGeminiEx?.message}), attempting OpenRouter fallback...", lastGeminiEx)
@@ -1088,7 +1198,6 @@ class WordRepository(
             Log.d("WordRepository", "[$tag] Gemini manually locked for today, skipping Gemini and calling OpenRouter directly...")
             return callOpenRouter(tag, systemPrompt, userPrompt, openRouterApiKey, null)
         } else {
-            // No Gemini keys configured: skip Gemini silently and go straight to OpenRouter
             Log.d("WordRepository", "[$tag] No Gemini keys configured, skipping Gemini and calling OpenRouter directly...")
             return callOpenRouter(tag, systemPrompt, userPrompt, openRouterApiKey, null)
         }
@@ -1104,9 +1213,17 @@ class WordRepository(
         val cleanKey = openRouterApiKey.trim()
         if (cleanKey.isBlank() || cleanKey == "MY_OPENROUTER_API_KEY") {
             val ex = if (geminiEx != null) {
-                IllegalStateException("OpenRouter fallback unavailable: No OpenRouter API key configured. (Gemini error: ${geminiEx.message})", geminiEx)
+                val code = extractHttpCode(geminiEx)
+                val friendly = when (code) {
+                    503 -> "Gemini servers are temporarily busy (HTTP 503). Tried backup models — please retry in a few seconds."
+                    429 -> "Gemini API quota reached (HTTP 429). Wait a moment or add a second key in Settings."
+                    401, 403 -> "Gemini API key was rejected (HTTP $code). Check your key in Settings → API Keys."
+                    404 -> "Selected Gemini model is unavailable (HTTP 404). Open Settings → API Keys and select Gemini 3.5 Flash Lite."
+                    else -> "AI request failed: ${geminiEx.message ?: "Check internet connection & API key."}"
+                }
+                IllegalStateException(friendly, geminiEx)
             } else {
-                IllegalStateException("No API key configured for Gemini or OpenRouter.")
+                IllegalStateException("No AI API key configured. Add your free Gemini API key in Settings → API Keys.")
             }
             return Result.failure(ex)
         }
@@ -1195,19 +1312,31 @@ class WordRepository(
         if (cleanKey.isBlank()) {
             return@withContext Result.failure(IllegalArgumentException("Please enter a Gemini API key first."))
         }
-        val effectiveModel = geminiModel.removePrefix("models/").trim().ifBlank { "gemini-3.5-flash-lite" }
+        val modelChain = resolveGeminiModelChain(geminiModel)
         val request = GenerateContentRequest(
             contents = listOf(Content(parts = listOf(Part(text = "Reply with OK")))),
             generationConfig = GenerationConfig(temperature = 0.0f)
         )
-        runCatching {
-            val response = apiService.generateContentWithModel(effectiveModel, cleanKey, request)
-            val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-            if (text.isNullOrBlank()) {
-                error("API responded with an empty message.")
+        var lastError: Throwable? = null
+        for ((idx, candidateModel) in modelChain.withIndex()) {
+            try {
+                val response = apiService.generateContentWithModel(candidateModel, cleanKey, request)
+                val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                if (!text.isNullOrBlank()) {
+                    val note = if (idx == 0) {
+                        "Connected ✓ ($candidateModel)"
+                    } else {
+                        "Connected ✓ via auto-fallback ($candidateModel)"
+                    }
+                    return@withContext Result.success(note)
+                }
+                lastError = IllegalStateException("API responded with an empty message.")
+            } catch (e: Throwable) {
+                lastError = e
+                if (isAuthFailure(e) || !isRetryableModelFailure(e)) break
             }
-            "Connected ($effectiveModel)"
         }
+        Result.failure(lastError ?: IllegalStateException("Connection failed"))
     }
 
     suspend fun translateWordToArabic(
@@ -1252,6 +1381,35 @@ class WordRepository(
     }
 
     companion object {
+        val GEMINI_FALLBACK_MODELS: List<String> = listOf(
+            "gemini-3.5-flash-lite",
+            "gemini-3.1-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-flash-lite-latest",
+            "gemini-3.6-flash",
+            "gemini-3-flash-preview"
+        )
+
+        private val RETIRED_GEMINI_MODELS: Set<String> = setOf(
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-lite",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro"
+        )
+
+        fun resolveGeminiModelChain(preferredModel: String): List<String> {
+            val cleaned = preferredModel.removePrefix("models/").trim()
+            val chain = LinkedHashSet<String>()
+            if (cleaned.isNotBlank() && cleaned.lowercase() !in RETIRED_GEMINI_MODELS) {
+                chain.add(cleaned)
+            }
+            GEMINI_FALLBACK_MODELS.forEach { chain.add(it) }
+            return chain.toList()
+        }
+
         private val PEXELS_STOP_WORDS = setOf(
             // Articles
             "a", "an", "the",

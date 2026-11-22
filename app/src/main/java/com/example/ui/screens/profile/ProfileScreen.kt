@@ -55,6 +55,12 @@ fun ProfileScreen(
     val selectedAccent by viewModel.selectedAccent.collectAsStateWithLifecycle()
     val selectedAppIconId by viewModel.selectedAppIcon.collectAsStateWithLifecycle()
     val selectedThemeId by viewModel.selectedThemeColor.collectAsStateWithLifecycle()
+    val userName by viewModel.userName.collectAsStateWithLifecycle()
+    val userEnglishLevel by viewModel.userEnglishLevel.collectAsStateWithLifecycle()
+    val ieltsTargetBand by viewModel.ieltsTargetBand.collectAsStateWithLifecycle()
+    val newCardsPerDay by viewModel.newCardsPerDay.collectAsStateWithLifecycle()
+    val weeklyTarget by viewModel.weeklyNewWordsTarget.collectAsStateWithLifecycle()
+    val weeklyStudied by viewModel.weeklyWordsStudiedCount.collectAsStateWithLifecycle()
     val activeIconMeta = remember(selectedAppIconId) { com.example.ui.SadaAppIcon.fromId(selectedAppIconId) }
     val activeThemeMeta = remember(selectedThemeId) {
         com.example.ui.theme.SadaBrandThemePresets.firstOrNull { it.id.equals(selectedThemeId, ignoreCase = true) }
@@ -90,7 +96,7 @@ fun ProfileScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Profile")
                 }
                 Text(
-                    text = if (subPage == ProfileSubPage.DAILY_READING) "Daily Reading (Online AI)" else "Sentence Mining",
+                    text = if (subPage == ProfileSubPage.DAILY_READING) "IELTS Reading Corner" else "Sentence Mining",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                 )
             }
@@ -133,6 +139,107 @@ fun ProfileScreen(
                 .widthIn(max = 680.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // Personalized Learner Identity Card (Name + Avatar + CEFR / IELTS Band + Weekly Goal)
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("profile_identity_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        val initial = userName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "S"
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)
+                                    ),
+                                    shape = androidx.compose.foundation.shape.CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = initial,
+                                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(
+                                text = userName.ifBlank { "Sada Learner" },
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.testTag("profile_user_name_text")
+                            )
+                            Text(
+                                text = "CEFR $userEnglishLevel · Target IELTS Band $ieltsTargetBand",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(
+                            onClick = { onOpenSettingsTab(1) },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("profile_edit_name_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit profile & targets",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    // Daily & Weekly Habit Target Summary Bar
+                    val weekFrac = (weeklyStudied.toFloat() / weeklyTarget.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+                    Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Weekly Habit Target",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "$weeklyStudied / $weeklyTarget words · $newCardsPerDay/day",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        LinearProgressIndicator(
+                            progress = { weekFrac },
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                        )
+                    }
+                }
+            }
+
             // Top KPI Strip
             Row(
                 modifier = Modifier.fillMaxWidth(),

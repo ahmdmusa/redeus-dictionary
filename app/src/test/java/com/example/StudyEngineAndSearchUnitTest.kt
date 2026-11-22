@@ -261,4 +261,105 @@ class StudyEngineAndSearchUnitTest {
         assertTrue("Google Neural ($googleNeuralScore) must outrank eSpeak ($espeakScore) by >= 800", googleNeuralScore - espeakScore >= 800)
         assertTrue("Google Neural ($googleNeuralScore) must outrank Pico ($picoScore) by >= 800", googleNeuralScore - picoScore >= 800)
     }
+
+    @Test
+    fun `IeltsPracticePromptBuilder builds 3-part IELTS Speaking prompt with learner identity and target words`() {
+        val words = listOf(
+            WordEntity(word = "aquatic", partOfSpeech = "adj", definition = "Living in or near water", arabicMeaning = "مائي"),
+            WordEntity(word = "resilient", partOfSpeech = "adj", definition = "Able to recover quickly", arabicMeaning = "مرن")
+        )
+        val prompt = com.example.domain.IeltsPracticePromptBuilder.buildSpeakingPrompt(
+            words = words,
+            userName = "Ahmed",
+            cefrLevel = "B2",
+            targetBand = "7.5",
+            scope = com.example.domain.PracticeWordScope.TODAY
+        )
+        assertTrue("Prompt must include learner name", prompt.contains("Ahmed"))
+        assertTrue("Prompt must include target band", prompt.contains("7.5"))
+        assertTrue("Prompt must include CEFR level", prompt.contains("B2"))
+        assertTrue("Prompt must include target words", prompt.contains("aquatic") && prompt.contains("resilient"))
+        assertTrue("Prompt must include IELTS Parts 1, 2, 3", prompt.contains("Part 1") && prompt.contains("Part 2") && prompt.contains("Part 3"))
+    }
+
+    @Test
+    fun `IeltsPracticePromptBuilder selects TODAY, THIS_WEEK, WEAK_WORDS and detects habit milestones`() {
+        val today = java.time.LocalDate.of(2026, 11, 22)
+        val zone = java.time.ZoneOffset.UTC
+        val todayEpoch = today.toEpochDay()
+        val todayMs = today.atStartOfDay(zone).plusHours(2).toInstant().toEpochMilli()
+        val fourDaysAgoMs = today.minusDays(4).atStartOfDay(zone).plusHours(2).toInstant().toEpochMilli()
+        val oldMs = today.minusDays(20).atStartOfDay(zone).toInstant().toEpochMilli()
+
+        val deck = listOf(
+            WordEntity(word = "todayWord", isBookmarked = true, lastReviewed = todayEpoch, timestamp = todayMs, lapses = 0, fsrsStability = 10.0),
+            WordEntity(word = "weekWord", isBookmarked = true, lastReviewed = todayEpoch - 4, timestamp = fourDaysAgoMs, lapses = 1, fsrsStability = 6.0),
+            WordEntity(word = "leechWord", isBookmarked = true, lastReviewed = todayEpoch - 15, timestamp = oldMs, isLeech = true, lapses = 5, fsrsStability = 1.2)
+        )
+        val logs = listOf(
+            com.example.data.ReviewLogEntity(word = "todayWord", rating = "Good", timestamp = todayMs),
+            com.example.data.ReviewLogEntity(word = "weekWord", rating = "Good", timestamp = fourDaysAgoMs)
+        )
+
+        val todayPicked = com.example.domain.IeltsPracticePromptBuilder.selectTargetWordsForPractice(
+            bookmarkedWords = deck,
+            reviewLogs = logs,
+            scope = com.example.domain.PracticeWordScope.TODAY,
+            today = today,
+            zoneId = zone
+        )
+        assertEquals(listOf("todayWord"), todayPicked.map { it.word })
+
+        val weekPicked = com.example.domain.IeltsPracticePromptBuilder.selectTargetWordsForPractice(
+            bookmarkedWords = deck,
+            reviewLogs = logs,
+            scope = com.example.domain.PracticeWordScope.THIS_WEEK,
+            today = today,
+            zoneId = zone
+        )
+        assertEquals(setOf("todayWord", "weekWord"), weekPicked.map { it.word }.toSet())
+
+        val weakPicked = com.example.domain.IeltsPracticePromptBuilder.selectTargetWordsForPractice(
+            bookmarkedWords = deck,
+            reviewLogs = logs,
+            scope = com.example.domain.PracticeWordScope.WEAK_WORDS,
+            today = today,
+            zoneId = zone
+        )
+        assertEquals("leechWord", weakPicked.first().word)
+
+        val studiedThisWeek = com.example.domain.IeltsPracticePromptBuilder.countDistinctWordsStudiedInWindow(
+            bookmarkedWords = deck,
+            reviewLogs = logs,
+            days = 7,
+            today = today,
+            zoneId = zone
+        )
+        assertEquals(2, studiedThisWeek)
+
+        assertEquals(7, com.example.domain.IeltsPracticePromptBuilder.detectStreakMilestone(7))
+        assertEquals(null, com.example.domain.IeltsPracticePromptBuilder.detectStreakMilestone(5))
+        val progress = com.example.domain.IeltsPracticePromptBuilder.calculateHabitProgress(
+            dailyStudied = 10,
+            dailyTarget = 10,
+            weeklyStudied = 50,
+            weeklyTarget = 70,
+            currentStreakDays = 14
+        )
+        assertTrue(progress.dailyHit)
+        assertFalse(progress.weeklyHit)
+        assertEquals(14, progress.streakMilestoneDays)
+    }
+
+    @Test
+    fun `WordRepository resolveGeminiModelChain migrates retired models and preserves valid custom model first`() {
+        val retiredChain = com.example.data.WordRepository.resolveGeminiModelChain("gemini-2.5-flash")
+        assertEquals("gemini-3.5-flash-lite", retiredChain.first())
+        assertFalse("Retired model must be excluded from chain", retiredChain.contains("gemini-2.5-flash"))
+        assertTrue("Chain must provide multiple fallback backups", retiredChain.size >= 4)
+
+        val customChain = com.example.data.WordRepository.resolveGeminiModelChain("models/gemini-3.6-flash")
+        assertEquals("gemini-3.6-flash", customChain.first())
+        assertEquals("No duplicate models in failover chain", customChain.size, customChain.toSet().size)
+    }
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -383,11 +384,18 @@ fun CoursesExplorerContent(
                                 .weight(1f),
                             contentPadding = PaddingValues(bottom = 16.dp)
                         ) {
-                            item(key = "search_results_group") {
-                                AppleInsetGroupedCard {
-                                    courseSearchResults.forEachIndexed { idx, item ->
-                                        val inDeck = deckWordMap.containsKey(item.word.lowercase())
-                                        val isMastered = item.word.lowercase() in masteredWordSet
+                            itemsIndexed(
+                                items = courseSearchResults,
+                                key = { _, item -> item.id }
+                            ) { idx, item ->
+                                val inDeck = deckWordMap.containsKey(item.word.lowercase())
+                                val isMastered = item.word.lowercase() in masteredWordSet
+                                Surface(
+                                    shape = groupedRowShape(idx, courseSearchResults.size),
+                                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column {
                                         CurriculumWordInsetRow(
                                             item = item,
                                             inDeck = inDeck,
@@ -410,6 +418,12 @@ fun CoursesExplorerContent(
                         }
                     }
                 } else if (catalogFilter == CourseCatalogFilter.TOPICS) {
+                    val topicCounts = remember(topics, topicWordLowersMap, deckWordMap, masteredWordSet) {
+                        topics.associate { topic ->
+                            val wordsSet = topicWordLowersMap[topic.id].orEmpty()
+                            topic.id to (wordsSet.count { it in deckWordMap } to wordsSet.count { it in masteredWordSet })
+                        }
+                    }
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -420,12 +434,17 @@ fun CoursesExplorerContent(
                             AppleSectionHeader(title = "26 Life Topics · Essential 6 Books")
                             Spacer(modifier = Modifier.height(6.dp))
                         }
-                        item(key = "topics_group") {
-                            AppleInsetGroupedCard {
-                                topics.forEachIndexed { idx, topic ->
-                                    val wordsSet = topicWordLowersMap[topic.id].orEmpty()
-                                    val inDeck = wordsSet.count { it in deckWordMap }
-                                    val mastered = wordsSet.count { it in masteredWordSet }
+                        itemsIndexed(
+                            items = topics,
+                            key = { _, topic -> topic.id }
+                        ) { idx, topic ->
+                            val (inDeck, mastered) = topicCounts[topic.id] ?: (0 to 0)
+                            Surface(
+                                shape = groupedRowShape(idx, topics.size),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column {
                                     TopicInsetRow(
                                         topic = topic,
                                         inDeckCount = inDeck,
@@ -1094,22 +1113,38 @@ private fun CourseBookUnitsPane(
             }
         }
 
+        val unitSummaries = remember(units, unitWordLowersMap, deckWordMap) {
+            units.associate { unit ->
+                val unitWords = unitWordLowersMap[unit.unitNum].orEmpty()
+                unit.id to CourseProgressCalculator.calculateUnitProgress(
+                    unit = unit,
+                    unitWordLowers = unitWords,
+                    deckWordMap = deckWordMap
+                )
+            }
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
             contentPadding = PaddingValues(bottom = 20.dp)
         ) {
-            item(key = "units_group") {
-                AppleInsetGroupedCard {
-                    units.forEachIndexed { idx, unit ->
-                        val unitWords = unitWordLowersMap[unit.unitNum].orEmpty()
-                        val unitSummary = CourseProgressCalculator.calculateUnitProgress(
-                            unit = unit,
-                            unitWordLowers = unitWords,
-                            deckWordMap = deckWordMap
-                        )
-
+            itemsIndexed(
+                items = units,
+                key = { _, unit -> unit.id }
+            ) { idx, unit ->
+                val unitSummary = unitSummaries[unit.id] ?: CourseProgressCalculator.calculateUnitProgress(
+                    unit = unit,
+                    unitWordLowers = unitWordLowersMap[unit.unitNum].orEmpty(),
+                    deckWordMap = deckWordMap
+                )
+                Surface(
+                    shape = groupedRowShape(idx, units.size),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1398,11 +1433,18 @@ private fun CourseWordsListPane(
                 .weight(1f),
             contentPadding = PaddingValues(bottom = 20.dp)
         ) {
-            item(key = "words_group") {
-                AppleInsetGroupedCard {
-                    words.forEachIndexed { idx, item ->
-                        val inDeck = deckWordMap.containsKey(item.word.lowercase())
-                        val isMastered = item.word.lowercase() in masteredWordSet
+            itemsIndexed(
+                items = words,
+                key = { _, item -> item.id }
+            ) { idx, item ->
+                val inDeck = deckWordMap.containsKey(item.word.lowercase())
+                val isMastered = item.word.lowercase() in masteredWordSet
+                Surface(
+                    shape = groupedRowShape(idx, words.size),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column {
                         CurriculumWordInsetRow(
                             item = item,
                             inDeck = inDeck,
@@ -1420,6 +1462,15 @@ private fun CourseWordsListPane(
                 }
             }
         }
+    }
+}
+
+private fun groupedRowShape(index: Int, totalCount: Int, cornerDp: androidx.compose.ui.unit.Dp = 16.dp): RoundedCornerShape {
+    return when {
+        totalCount <= 1 -> RoundedCornerShape(cornerDp)
+        index == 0 -> RoundedCornerShape(topStart = cornerDp, topEnd = cornerDp)
+        index == totalCount - 1 -> RoundedCornerShape(bottomStart = cornerDp, bottomEnd = cornerDp)
+        else -> RoundedCornerShape(0.dp)
     }
 }
 

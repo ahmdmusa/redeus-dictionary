@@ -553,5 +553,114 @@ class OfflineDictionaryIntegrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun `Gemini HTTP 503 automatically fails over to backup working model and enriches word cleanly`() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        val attemptedModels = mutableListOf<String>()
+        val flakyGemini = object : GeminiApiService {
+            override suspend fun generateContent(apiKey: String, request: GenerateContentRequest): GenerateContentResponse {
+                throw IllegalStateException("Unexpected default endpoint call")
+            }
+
+            override suspend fun generateContentWithModel(
+                model: String,
+                apiKey: String,
+                request: GenerateContentRequest
+            ): GenerateContentResponse {
+                attemptedModels.add(model)
+                if (attemptedModels.size == 1) {
+                    val mediaType = okhttp3.MediaType.Companion.run { "application/json".toMediaType() }
+                    val errorBody = okhttp3.ResponseBody.Companion.run {
+                        """{"error":{"code":503,"message":"Model experiencing high demand"}}""".toResponseBody(mediaType)
+                    }
+                    throw retrofit2.HttpException(retrofit2.Response.error<GenerateContentResponse>(503, errorBody))
+                }
+                return GenerateContentResponse(
+                    candidates = listOf(
+                        Candidate(
+                            content = Content(
+                                parts = listOf(
+                                    Part(
+                                        text = """
+                                            {
+                                              "word": "agree",
+                                              "phonetic": "/əˈɡriː/",
+                                              "partOfSpeech": "verb",
+                                              "definition": "To have the same opinion as someone else.",
+                                              "synonyms": ["concur", "consent", "approve"],
+                                              "antonyms": ["disagree", "oppose"],
+                                              "example": "Both researchers agree on the final conclusion.",
+                                              "mnemonic": "A + gree = greet each other in harmony.",
+                                              "imagePrompt": ""
+                                            }
+                                        """.trimIndent()
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            }
+        }
+        try {
+            val repo = WordRepository(
+                wordDao = db.wordDao(),
+                apiService = flakyGemini,
+                context = context
+            )
+            val result = repo.searchAndFetchWord(
+                word = "agree",
+                geminiApiKeys = listOf("test-valid-key"),
+                geminiModel = "gemini-3.5-flash-lite",
+                aiVisualizationsEnabled = false,
+                forceAiEnrich = true
+            )
+            assertTrue("Expected automatic failover success on HTTP 503, got: ${result.exceptionOrNull()}", result.isSuccess)
+            val enriched = result.getOrThrow()
+            assertTrue("Should try at least 2 models after 503 failover", attemptedModels.size >= 2)
+            assertTrue("Enriched synonyms should be saved", enriched.synonyms.contains("concur"))
+            assertTrue("Enriched mnemonic should be saved", enriched.mnemonic.contains("harmony"))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `Sada v1_5 persists personal profile name, weekly target, IELTS band, reading style, and warms up local image cache`() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        app.getSharedPreferences("vocab_ai_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+        val db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repo = WordRepository(db.wordDao(), failingGeminiService, context = app)
+            val vm1 = DictionaryViewModel(app, repo)
+
+            vm1.setUserName("Ahmed")
+            vm1.setWeeklyNewWordsTarget(84)
+            vm1.setIeltsTargetBand("7.5")
+            vm1.setReadingStyle(com.example.domain.ReadingStyle.SHORT_STORY)
+
+            val vm2 = DictionaryViewModel(app, repo)
+            assertEquals("Ahmed", vm2.userName.value)
+            assertEquals(84, vm2.weeklyNewWordsTarget.value)
+            assertEquals("7.5", vm2.ieltsTargetBand.value)
+            assertEquals(com.example.domain.ReadingStyle.SHORT_STORY, vm2.readingStyle.value)
+
+            // Verify LocalWordImageStore warmUpSync enables O(1) main-thread-safe cache lookup
+            val store = com.example.data.LocalWordImageStore.getInstance(app)
+            store.warmUpSync()
+            assertEquals(
+                com.example.data.LocalImageOrigin.BUNDLED_OFFLINE,
+                store.getLocalImageOriginIfCached("agree")
+            )
+        } finally {
+            db.close()
+        }
+    }
 }
 

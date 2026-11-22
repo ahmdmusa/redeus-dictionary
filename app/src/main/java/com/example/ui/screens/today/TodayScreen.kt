@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -65,11 +66,17 @@ fun TodayScreen(
     onOpenQuickSearch: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenQuickQuiz: () -> Unit,
+    onOpenIeltsReading: () -> Unit = {},
     onOpenSettings: () -> Unit = {}
 ) {
     val todaySummary by viewModel.todayQueueSummary.collectAsStateWithLifecycle()
     val currentStreak by viewModel.currentStreak.collectAsStateWithLifecycle()
     val dailyGoalTarget by viewModel.dailyGoalTarget.collectAsStateWithLifecycle()
+    val weeklyTarget by viewModel.weeklyNewWordsTarget.collectAsStateWithLifecycle()
+    val weeklyStudied by viewModel.weeklyWordsStudiedCount.collectAsStateWithLifecycle()
+    val userName by viewModel.userName.collectAsStateWithLifecycle()
+    val todayWords by viewModel.todayStudiedWords.collectAsStateWithLifecycle()
+    val weekWords by viewModel.weekStudiedWords.collectAsStateWithLifecycle()
     val detailedStats by viewModel.detailedSrsStats.collectAsStateWithLifecycle()
     val activeCourseBookNum by viewModel.activeCourseBookNum.collectAsStateWithLifecycle()
     val offlineBooks by viewModel.offlineBooks.collectAsStateWithLifecycle()
@@ -90,13 +97,17 @@ fun TodayScreen(
         }
     }
 
-    val greeting = remember {
+    val baseGreeting = remember {
         val hour = LocalTime.now().hour
         when {
             hour < 12 -> "Good morning"
             hour < 18 -> "Good afternoon"
             else -> "Good evening"
         }
+    }
+    val greeting = remember(baseGreeting, userName) {
+        val cleanName = userName.trim()
+        if (cleanName.isNotBlank()) "$baseGreeting, $cleanName" else baseGreeting
     }
     val dateHeader = remember {
         LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMM", Locale.ENGLISH))
@@ -147,8 +158,10 @@ fun TodayScreen(
         DailyTargetsBottomSheet(
             dailyGoal = dailyGoalTarget,
             newCardsPerDay = newCardsPerDay,
+            weeklyTarget = weeklyTarget,
             onSelectDailyGoal = { viewModel.setDailyGoalTarget(it) },
             onSelectNewPerDay = { viewModel.setNewCardsPerDay(it) },
+            onSelectWeeklyTarget = { viewModel.setWeeklyNewWordsTarget(it) },
             onDismiss = { showGoalSheet = false }
         )
     }
@@ -198,7 +211,7 @@ fun TodayScreen(
                     Text(
                         text = greeting,
                         style = MaterialTheme.typography.headlineMedium.copy(
-                            fontSize = 28.sp,
+                            fontSize = 26.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = (-0.5).sp
                         ),
@@ -305,14 +318,77 @@ fun TodayScreen(
                 )
             }
 
-            // 3. Daily Goal Ring + 7-Day Activity Strip
+            // 3. Daily Goal Ring + Weekly Target Progress + 7-Day Activity Strip
             DailyGoalAndWeekCard(
                 todayReviews = todayReviews,
                 dailyGoalTarget = dailyGoalTarget,
                 newCardsPerDay = newCardsPerDay,
+                weeklyStudied = weeklyStudied,
+                weeklyTarget = weeklyTarget,
+                currentStreak = currentStreak,
                 last7Days = last7Days,
                 onEditGoal = { showGoalSheet = true }
             )
+
+            // 3b. IELTS Speaking Agent Prompt + IELTS Reading Corner (Practice real language with today's/week's words!)
+            if (bookmarkedWords.isNotEmpty()) {
+                val dailyDone = todayReviews >= dailyGoalTarget.coerceAtLeast(1)
+                if (dailyDone || todayWords.isNotEmpty()) {
+                    IeltsSpeakingPromptCard(
+                        viewModel = viewModel,
+                        todayWords = todayWords,
+                        weekWords = weekWords,
+                        defaultScope = com.example.domain.PracticeWordScope.TODAY,
+                        headline = if (dailyDone) {
+                            "Daily Goal Hit — Speak with AI Agent!"
+                        } else {
+                            "IELTS Speaking Practice Prompt"
+                        },
+                        subtitle = if (dailyDone) {
+                            "You hit today's target! Copy this tailored prompt to practice today's words in IELTS Speaking with ChatGPT Voice or Gemini."
+                        } else {
+                            "Practice your daily & weekly words in a 3-part IELTS Speaking conversation with any AI voice agent."
+                        }
+                    )
+                }
+
+                AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenIeltsReading)
+                            .padding(14.dp)
+                            .testTag("today_ielts_reading_card"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        AppleIconBadge(
+                            icon = Icons.AutoMirrored.Filled.MenuBook,
+                            tintColor = MaterialTheme.colorScheme.primary,
+                            size = 40.dp,
+                            iconSize = 20.dp
+                        )
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "IELTS Reading Corner",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Practice IELTS passages & stories crafted from your daily & weekly words",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = "Open IELTS Reading",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             // 4. Continue Active Course Card (deep-links to exact Book & Unit!)
             if (activeBook != null && activeBookProgress != null) {
@@ -792,17 +868,30 @@ private fun DailyGoalAndWeekCard(
     todayReviews: Int,
     dailyGoalTarget: Int,
     newCardsPerDay: Int,
+    weeklyStudied: Int,
+    weeklyTarget: Int,
+    currentStreak: Int,
     last7Days: List<DayStreakStatus>,
     onEditGoal: () -> Unit
 ) {
     val safeGoal = dailyGoalTarget.coerceAtLeast(1)
+    val safeWeekly = weeklyTarget.coerceAtLeast(1)
     val progress = (todayReviews.toFloat() / safeGoal.toFloat()).coerceIn(0f, 1f)
+    val weeklyProgress = (weeklyStudied.toFloat() / safeWeekly.toFloat()).coerceIn(0f, 1f)
     val reducedMotion = LocalReducedMotionEnabled.current
     val animatedRing by animateFloatAsState(
         targetValue = progress,
         animationSpec = if (reducedMotion) RedeusMotion.spec(true) else spring(dampingRatio = 0.85f, stiffness = 240f),
         label = "todayGoalRing"
     )
+    val animatedWeekly by animateFloatAsState(
+        targetValue = weeklyProgress,
+        animationSpec = if (reducedMotion) RedeusMotion.spec(true) else spring(dampingRatio = 0.88f, stiffness = 220f),
+        label = "weeklyGoalBar"
+    )
+    val milestoneDays = remember(currentStreak) {
+        com.example.domain.IeltsPracticePromptBuilder.detectStreakMilestone(currentStreak)
+    }
     val appleGreen = Color(0xFF30D158)
     val appleBlue = MaterialTheme.colorScheme.primary
     val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
@@ -910,6 +999,57 @@ private fun DailyGoalAndWeekCard(
                     }
                 }
             }
+
+            // Weekly Habit Target Bar + Milestone Badge
+            AppleInsetDivider(startIndent = 0.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "Weekly Words Target",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (milestoneDays != null) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.16f)
+                            ) {
+                                Text(
+                                    text = "★ ${milestoneDays}d Milestone",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = "$weeklyStudied / $safeWeekly",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontFeatureSettings = "tnum"
+                        ),
+                        color = if (weeklyStudied >= safeWeekly) appleGreen else appleBlue
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { animatedWeekly },
+                    color = if (weeklyStudied >= safeWeekly) appleGreen else appleBlue,
+                    trackColor = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.07f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                )
+            }
         }
     }
 }
@@ -919,8 +1059,10 @@ private fun DailyGoalAndWeekCard(
 private fun DailyTargetsBottomSheet(
     dailyGoal: Int,
     newCardsPerDay: Int,
+    weeklyTarget: Int,
     onSelectDailyGoal: (Int) -> Unit,
     onSelectNewPerDay: (Int) -> Unit,
+    onSelectWeeklyTarget: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -936,7 +1078,7 @@ private fun DailyTargetsBottomSheet(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
-                text = "Daily Study Targets",
+                text = "Daily & Weekly Habit Targets",
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -962,7 +1104,7 @@ private fun DailyTargetsBottomSheet(
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("NEW CARDS PER DAY LIMIT", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("NEW WORDS PER DAY", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(5, 10, 15, 20, 30).forEach { limit ->
                         val selected = newCardsPerDay == limit
@@ -977,6 +1119,28 @@ private fun DailyTargetsBottomSheet(
                                     text = "$limit",
                                     fontWeight = FontWeight.Bold,
                                     color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("WEEKLY NEW WORDS TARGET", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(35, 70, 105, 140, 210).forEach { target ->
+                        val selected = weeklyTarget == target
+                        Surface(
+                            onClick = { onSelectWeeklyTarget(target) },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (selected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceContainer,
+                            modifier = Modifier.weight(1f).height(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "$target",
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (selected) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }

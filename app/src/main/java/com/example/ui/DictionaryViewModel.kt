@@ -157,7 +157,9 @@ sealed interface DailyReadingUiState {
         val isGrammarCorrect: Boolean? = null,
         val grammarScore: Int = 0,
         val oldReadingLevel: Int = 1,
-        val levelChange: LevelChange = LevelChange.UNCHANGED
+        val levelChange: LevelChange = LevelChange.UNCHANGED,
+        val targetWords: List<String> = emptyList(),
+        val readingStyle: com.example.domain.ReadingStyle = com.example.domain.ReadingStyle.IELTS_ACADEMIC
     ) : DailyReadingUiState
     data class Finished(
         val passage: String,
@@ -170,7 +172,9 @@ sealed interface DailyReadingUiState {
         val oldReadingLevel: Int,
         val newReadingLevel: Int,
         val levelChange: LevelChange,
-        val cefrLevel: String
+        val cefrLevel: String,
+        val targetWords: List<String> = emptyList(),
+        val readingStyle: com.example.domain.ReadingStyle = com.example.domain.ReadingStyle.IELTS_ACADEMIC
     ) : DailyReadingUiState
     data class Error(val message: String) : DailyReadingUiState
 }
@@ -1155,8 +1159,12 @@ class DictionaryViewModel(
 
     // --- Offline 9-Book (6 Essential + 3 IELTS) & 26 Life Topics Anki Courses ---
 
+    private var catalogLoadJob: Job? = null
+
     fun loadOfflineCatalog() {
-        viewModelScope.launch {
+        if (_offlineBooks.value.isNotEmpty() && _bookWordLowersMap.value.isNotEmpty()) return
+        if (catalogLoadJob?.isActive == true) return
+        catalogLoadJob = viewModelScope.launch {
             _offlineBooks.value = repository.getOfflineBooks()
             _offlineTopics.value = repository.getOfflineTopics()
             _bookWordLowersMap.value = repository.getOfflineBookWordLowersMap()
@@ -1633,6 +1641,108 @@ class DictionaryViewModel(
     )
     val newCardsPerDay: StateFlow<Int> = _newCardsPerDay.asStateFlow()
 
+    private val _userName = MutableStateFlow(
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .getString("user_display_name", "")?.trim() ?: ""
+    )
+    val userName: StateFlow<String> = _userName.asStateFlow()
+
+    private val _weeklyNewWordsTarget = MutableStateFlow(
+        run {
+            val prefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            val daily = prefs.getInt("new_cards_per_day", 10).coerceIn(5, 50)
+            prefs.getInt("weekly_new_words_target", daily * 7).coerceIn(10, 350)
+        }
+    )
+    val weeklyNewWordsTarget: StateFlow<Int> = _weeklyNewWordsTarget.asStateFlow()
+
+    private val _ieltsTargetBand = MutableStateFlow(
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .getString("ielts_target_band", "7.0") ?: "7.0"
+    )
+    val ieltsTargetBand: StateFlow<String> = _ieltsTargetBand.asStateFlow()
+
+    private val _readingStyle = MutableStateFlow(
+        com.example.domain.ReadingStyle.fromId(
+            getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                .getString("reading_style", com.example.domain.ReadingStyle.IELTS_ACADEMIC.id)
+        )
+    )
+    val readingStyle: StateFlow<com.example.domain.ReadingStyle> = _readingStyle.asStateFlow()
+
+    private val _readingWordScope = MutableStateFlow(
+        com.example.domain.PracticeWordScope.entries.firstOrNull {
+            it.name == getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                .getString("reading_word_scope", com.example.domain.PracticeWordScope.TODAY.name)
+        } ?: com.example.domain.PracticeWordScope.TODAY
+    )
+    val readingWordScope: StateFlow<com.example.domain.PracticeWordScope> = _readingWordScope.asStateFlow()
+
+    private val _todayStudiedWords = MutableStateFlow<List<WordEntity>>(emptyList())
+    val todayStudiedWords: StateFlow<List<WordEntity>> = _todayStudiedWords.asStateFlow()
+
+    private val _weekStudiedWords = MutableStateFlow<List<WordEntity>>(emptyList())
+    val weekStudiedWords: StateFlow<List<WordEntity>> = _weekStudiedWords.asStateFlow()
+
+    private val _weeklyWordsStudiedCount = MutableStateFlow(0)
+    val weeklyWordsStudiedCount: StateFlow<Int> = _weeklyWordsStudiedCount.asStateFlow()
+
+    fun setUserName(name: String) {
+        val clean = name.trim().take(40)
+        _userName.value = clean
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putString("user_display_name", clean).apply()
+    }
+
+    fun setWeeklyNewWordsTarget(target: Int) {
+        val clamped = target.coerceIn(10, 350)
+        _weeklyNewWordsTarget.value = clamped
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putInt("weekly_new_words_target", clamped).apply()
+    }
+
+    fun setIeltsTargetBand(band: String) {
+        val clean = band.trim().ifBlank { "7.0" }
+        _ieltsTargetBand.value = clean
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putString("ielts_target_band", clean).apply()
+    }
+
+    fun setReadingStyle(style: com.example.domain.ReadingStyle) {
+        _readingStyle.value = style
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putString("reading_style", style.id).apply()
+    }
+
+    fun setReadingWordScope(scope: com.example.domain.PracticeWordScope) {
+        _readingWordScope.value = scope
+        getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+            .edit().putString("reading_word_scope", scope.name).apply()
+    }
+
+    fun buildIeltsSpeakingPrompt(
+        scope: com.example.domain.PracticeWordScope = com.example.domain.PracticeWordScope.TODAY,
+        customWords: List<WordEntity>? = null
+    ): String {
+        val words = customWords ?: when (scope) {
+            com.example.domain.PracticeWordScope.TODAY ->
+                _todayStudiedWords.value.ifEmpty { _weekStudiedWords.value }.ifEmpty { bookmarksState.value.take(10) }
+            com.example.domain.PracticeWordScope.THIS_WEEK ->
+                _weekStudiedWords.value.ifEmpty { bookmarksState.value.take(12) }
+            com.example.domain.PracticeWordScope.WEAK_WORDS ->
+                bookmarksState.value
+                    .sortedWith(compareByDescending<WordEntity> { it.isLeech }.thenByDescending { it.lapses })
+                    .take(10)
+        }
+        return com.example.domain.IeltsPracticePromptBuilder.buildSpeakingPrompt(
+            words = words,
+            userName = _userName.value,
+            cefrLevel = _userEnglishLevel.value,
+            targetBand = _ieltsTargetBand.value,
+            scope = scope
+        )
+    }
+
     private val _activeCourseBookNum = MutableStateFlow(
         getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
             .getInt("active_course_book_num", 0) // 0 = none chosen yet
@@ -1748,6 +1858,7 @@ class DictionaryViewModel(
     fun refreshLocalImageStats() {
         viewModelScope.launch(Dispatchers.IO) {
             val store = LocalWordImageStore.getInstance(getApplication())
+            store.warmUpSync()
             _bundledLocalImagesCount.value = store.getBundledImageCount()
             _savedLocalImagesCount.value = store.getSavedPermanentImageCount()
         }
@@ -1755,6 +1866,18 @@ class DictionaryViewModel(
 
     fun getLocalImageOrigin(word: String): com.example.data.LocalImageOrigin {
         return LocalWordImageStore.getInstance(getApplication()).getLocalImageOrigin(word)
+    }
+
+    /** Zero-I/O RAM lookup for Compose UI thread; returns null only before background warm-up completes. */
+    fun getLocalImageOriginIfCached(word: String): com.example.data.LocalImageOrigin? {
+        return LocalWordImageStore.getInstance(getApplication()).getLocalImageOriginIfCached(word)
+    }
+
+    /** Resolves image origin safely off the Main Thread. */
+    suspend fun resolveLocalImageOriginAsync(word: String): com.example.data.LocalImageOrigin = withContext(Dispatchers.IO) {
+        val store = LocalWordImageStore.getInstance(getApplication())
+        store.warmUpSync()
+        store.getLocalImageOrigin(word)
     }
 
     fun startUnifiedStudySession(
@@ -2768,18 +2891,21 @@ class DictionaryViewModel(
         setLeechThreshold(8)
     }
 
-    // Refresh review statistics from history logs
+    private var refreshStatsJob: Job? = null
+
+    // Refresh review statistics from history logs off the Main Thread
     fun refreshStats() {
         refreshUsageStats()
-        viewModelScope.launch {
+        refreshStatsJob?.cancel()
+        refreshStatsJob = viewModelScope.launch(Dispatchers.Default) {
             try {
                 val logs = repository.getAllReviewLogs()
                 val total = logs.size
-                if (total > 0) {
+                val computedSuccessRate = if (total > 0) {
                     val goodOrEasy = logs.count { it.rating == "Good" || it.rating == "Easy" }
-                    _successRate.value = (goodOrEasy.toFloat() / total) * 100f
+                    (goodOrEasy.toFloat() / total) * 100f
                 } else {
-                    _successRate.value = 0f
+                    0f
                 }
 
                 val today = java.time.LocalDate.now()
@@ -2788,8 +2914,8 @@ class DictionaryViewModel(
                 val oneWeekAgo = todayStart - (7 * 24 * 60 * 60 * 1000L)
                 val thirtyDaysAgoStart = today.minusDays(29).atStartOfDay(zoneId).toInstant().toEpochMilli()
 
-                _reviewsToday.value = logs.count { it.timestamp >= todayStart }
-                _reviewsThisWeek.value = logs.count { it.timestamp >= oneWeekAgo }
+                val computedReviewsToday = logs.count { it.timestamp >= todayStart }
+                val computedReviewsThisWeek = logs.count { it.timestamp >= oneWeekAgo }
 
                 // 1. RETENTION RATE (Overall vs Last 30 Days)
                 val totalReviewsAllTime = total
@@ -2850,8 +2976,6 @@ class DictionaryViewModel(
                         isToday = (offset == 0)
                     )
                 }
-                _activityHeatmap60Days.value = streakHistoryLast60Days
-                _todayHabitActionsCount.value = logsByDay[today.toEpochDay()] ?: 0
 
                 // 3. RATING DISTRIBUTION (All-Time)
                 val againCount = logs.count { it.rating.equals("Again", ignoreCase = true) }
@@ -2867,9 +2991,9 @@ class DictionaryViewModel(
                 )
 
                 // 4. EASE FACTOR DISTRIBUTION & 5. FORECAST (Next 14 Days)
-                // Restrict calculation to active learning cards (bookmarked or reviewed) so unbookmarked search history does not distort forecasts
                 val allWords = repository.getAllWordsList()
                 val words = allWords.filter { it.isBookmarked || it.repetitions > 0 }
+                val bookmarkedOnly = allWords.filter { it.isBookmarked }
                 var bucketUnder1_8 = 0
                 var bucket1_8to2_2 = 0
                 var bucket2_2to2_6 = 0
@@ -2915,7 +3039,32 @@ class DictionaryViewModel(
 
                 val currentLeechCount = words.count { it.isLeech }
 
-                _detailedSrsStats.value = DetailedSrsStats(
+                // 6. Habit Targets & IELTS Practice Target Words (Today & Last 7 Days)
+                val todayTargetList = com.example.domain.IeltsPracticePromptBuilder.selectTargetWordsForPractice(
+                    bookmarkedWords = bookmarkedOnly,
+                    reviewLogs = logs,
+                    scope = com.example.domain.PracticeWordScope.TODAY,
+                    today = today,
+                    zoneId = zoneId,
+                    maxWords = 12
+                )
+                val weekTargetList = com.example.domain.IeltsPracticePromptBuilder.selectTargetWordsForPractice(
+                    bookmarkedWords = bookmarkedOnly,
+                    reviewLogs = logs,
+                    scope = com.example.domain.PracticeWordScope.THIS_WEEK,
+                    today = today,
+                    zoneId = zoneId,
+                    maxWords = 15
+                )
+                val weeklyDistinctStudied = com.example.domain.IeltsPracticePromptBuilder.countDistinctWordsStudiedInWindow(
+                    bookmarkedWords = bookmarkedOnly,
+                    reviewLogs = logs,
+                    days = 7,
+                    today = today,
+                    zoneId = zoneId
+                )
+
+                val newDetailedStats = DetailedSrsStats(
                     totalReviewsAllTime = totalReviewsAllTime,
                     totalReviewsLast30Days = totalReviewsLast30Days,
                     overallRetentionRate = overallRetentionRate,
@@ -2929,6 +3078,18 @@ class DictionaryViewModel(
                     longestStreak = _longestStreak.value,
                     leechWordsCount = currentLeechCount
                 )
+
+                _successRate.value = computedSuccessRate
+                _reviewsToday.value = computedReviewsToday
+                _reviewsThisWeek.value = computedReviewsThisWeek
+                _activityHeatmap60Days.value = streakHistoryLast60Days
+                _todayHabitActionsCount.value = logsByDay[todayEpochDay] ?: 0
+                _todayStudiedWords.value = todayTargetList
+                _weekStudiedWords.value = weekTargetList
+                _weeklyWordsStudiedCount.value = weeklyDistinctStudied
+                _detailedSrsStats.value = newDetailedStats
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("DictionaryViewModel", "Error refreshing stats", e)
             }
@@ -4634,11 +4795,27 @@ class DictionaryViewModel(
         generateDailyReading()
     }
 
-    fun generateDailyReading() {
+    fun generateDailyReading(
+        styleOverride: com.example.domain.ReadingStyle? = null,
+        scopeOverride: com.example.domain.PracticeWordScope? = null
+    ) {
+        val effectiveStyle = styleOverride ?: _readingStyle.value
+        val effectiveScope = scopeOverride ?: _readingWordScope.value
+        if (styleOverride != null) setReadingStyle(styleOverride)
+        if (scopeOverride != null) setReadingWordScope(scopeOverride)
+
         _dailyReadingUiState.value = DailyReadingUiState.Loading
         viewModelScope.launch {
             val level = getReadingLevel()
-            val targetWords = repository.getSavedWordsForReading()
+            val logs = repository.getAllReviewLogs()
+            val deckWords = bookmarksState.value.ifEmpty { repository.getBookmarkedWordsList() }
+            val scopedWords = com.example.domain.IeltsPracticePromptBuilder.selectTargetWordsForPractice(
+                bookmarkedWords = deckWords,
+                reviewLogs = logs,
+                scope = effectiveScope,
+                maxWords = 8
+            ).map { it.word }
+            val targetWords = if (scopedWords.isNotEmpty()) scopedWords else repository.getSavedWordsForReading()
             val geminiKeys = getOrderedGeminiMeaningKeys()
             val geminiModel = getEffectiveGeminiMeaningModel()
             val openRouterKey = _openRouterApiKey.value.trim()
@@ -4648,7 +4825,8 @@ class DictionaryViewModel(
                 targetWords = targetWords,
                 openRouterApiKey = openRouterKey,
                 geminiApiKeys = geminiKeys,
-                geminiModel = geminiModel
+                geminiModel = geminiModel,
+                readingStyle = effectiveStyle
             )
             refreshUsageStats()
             result.onSuccess { response ->
@@ -4666,7 +4844,9 @@ class DictionaryViewModel(
                     currentQuestionIndex = 0,
                     readingLevel = level,
                     cefrLevel = getCefrLabel(level),
-                    grammarQuestions = response.grammarQuestions
+                    grammarQuestions = response.grammarQuestions,
+                    targetWords = targetWords,
+                    readingStyle = effectiveStyle
                 )
             }.onFailure { ex ->
                 _dailyReadingUiState.value = DailyReadingUiState.Error(
@@ -4778,7 +4958,9 @@ class DictionaryViewModel(
                             oldReadingLevel = oldLevel,
                             newReadingLevel = newLevel,
                             levelChange = levelChange,
-                            cefrLevel = getCefrLabel(newLevel)
+                            cefrLevel = getCefrLabel(newLevel),
+                            targetWords = currentState.targetWords,
+                            readingStyle = currentState.readingStyle
                         )
                     }
                 }
@@ -4836,7 +5018,9 @@ class DictionaryViewModel(
                     oldReadingLevel = currentState.oldReadingLevel,
                     newReadingLevel = currentState.readingLevel,
                     levelChange = currentState.levelChange,
-                    cefrLevel = currentState.cefrLevel
+                    cefrLevel = currentState.cefrLevel,
+                    targetWords = currentState.targetWords,
+                    readingStyle = currentState.readingStyle
                 )
             }
         }
@@ -4952,7 +5136,18 @@ class DictionaryViewModel(
         }
         _geminiMeaningActiveKeyIndex.value = savedMeaningActiveIndex
 
-        _geminiMeaningModelChoice.value = sharedPrefs.getString("gemini_meaning_model_choice", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
+        val savedModelChoice = sharedPrefs.getString("gemini_meaning_model_choice", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
+        val migratedModel = if (savedModelChoice.lowercase() in setOf(
+                "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.5-pro",
+                "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash", "gemini-1.5-pro"
+            )
+        ) {
+            sharedPrefs.edit().putString("gemini_meaning_model_choice", "gemini-3.5-flash-lite").apply()
+            "gemini-3.5-flash-lite"
+        } else {
+            savedModelChoice
+        }
+        _geminiMeaningModelChoice.value = migratedModel
         _geminiMeaningCustomModel.value = sharedPrefs.getString("gemini_meaning_custom_model", "gemini-3.5-flash-lite") ?: "gemini-3.5-flash-lite"
         _openRouterApiKey.value = sharedPrefs.getString("openrouter_api_key", "") ?: ""
         _pexelsApiKey.value = sharedPrefs.getString("pexels_api_key", "") ?: ""
@@ -5007,6 +5202,10 @@ class DictionaryViewModel(
 
         refreshStats()
         loadOfflineCatalog()
+        // Pre-copy 28MB word_images.db & index 3,586 keys in RAM completely off the Main Thread
+        viewModelScope.launch(Dispatchers.IO) {
+            LocalWordImageStore.getInstance(application).warmUpSync()
+        }
 
         viewModelScope.launch {
             val isSentencesSeeded = sharedPrefs.getBoolean("is_sentences_seeded_v1", false)

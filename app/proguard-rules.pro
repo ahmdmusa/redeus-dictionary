@@ -1,21 +1,43 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Keep line numbers for clean crash stack traces
+-keepattributes SourceFile,LineNumberTable
+-keepattributes Signature,InnerClasses,EnclosingMethod,*Annotation*
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Moshi reflection & KSP generated JsonAdapters
+-keep class com.squareup.moshi.** { *; }
+-keep interface com.squareup.moshi.** { *; }
+-keepclassmembers class * {
+    @com.squareup.moshi.FromJson <methods>;
+    @com.squareup.moshi.ToJson <methods>;
+}
+-keep @com.squareup.moshi.JsonClass class * { *; }
+-keep class *JsonAdapter {
+    public <init>(com.squareup.moshi.Moshi);
+    public <init>(com.squareup.moshi.Moshi, java.lang.reflect.Type[]);
+}
+-keep class com.example.api.** { *; }
+-keep class com.example.data.** { *; }
+-keep class com.example.domain.** { *; }
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Retrofit & OkHttp
+-keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations
+-keep,allowobfuscation,allowshrinking interface retrofit2.Call
+-keep,allowobfuscation,allowshrinking class retrofit2.Response
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn javax.annotation.**
+-dontwarn org.codehaus.mojo.animal_sniffer.**
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Room
+-keep class * extends androidx.room.RoomDatabase
+-dontwarn androidx.room.paging.**
+
+# Open Spaced Repetition FSRS
+-keep class io.github.openspacedrepetition.** { *; }
+-dontwarn io.github.openspacedrepetition.**
+
+# Launcher activity aliases & receivers
+-keep class com.example.MainActivity { *; }
+-keep class com.example.Launcher* { *; }
+-keep class com.example.reminder.** { *; }
+

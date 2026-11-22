@@ -116,6 +116,12 @@ fun SettingsScreen(
     val detailedSrsStats by viewModel.detailedSrsStats.collectAsStateWithLifecycle()
 
     val userEnglishLevel by viewModel.userEnglishLevel.collectAsStateWithLifecycle()
+    val userName by viewModel.userName.collectAsStateWithLifecycle()
+    val dailyGoalTarget by viewModel.dailyGoalTarget.collectAsStateWithLifecycle()
+    val newCardsPerDay by viewModel.newCardsPerDay.collectAsStateWithLifecycle()
+    val weeklyNewWordsTarget by viewModel.weeklyNewWordsTarget.collectAsStateWithLifecycle()
+    val weeklyWordsStudiedCount by viewModel.weeklyWordsStudiedCount.collectAsStateWithLifecycle()
+    val ieltsTargetBand by viewModel.ieltsTargetBand.collectAsStateWithLifecycle()
     val readingSessions by viewModel.readingSessionsState.collectAsStateWithLifecycle()
     val currentReadingLevel by viewModel.readingLevel.collectAsStateWithLifecycle()
     val aiUsageStats by viewModel.aiUsageStats.collectAsStateWithLifecycle()
@@ -677,12 +683,53 @@ fun SettingsScreen(
                     }
 
                     1 -> {
-                        // ENGLISH LEVEL
-                        SettingsSectionCard(title = "My English level") {
+                        // MY PROFILE & LEARNING IDENTITY (Name + CEFR + IELTS Band)
+                        SettingsSectionCard(
+                            title = "My profile & IELTS identity",
+                            modifier = Modifier.testTag("settings_profile_identity_card")
+                        ) {
+                            var nameDraft by remember(userName) { mutableStateOf(userName) }
+                            val hasUnsavedName = nameDraft.trim() != userName
                             Text(
-                                text = "Choose your CEFR level to calibrate Daily Reading passage difficulty.",
+                                text = "Personalize your Profile greeting and IELTS AI Speaking coaching prompts.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = nameDraft,
+                                    onValueChange = { nameDraft = it.take(40) },
+                                    label = { Text("Your name") },
+                                    placeholder = { Text("e.g. Ahmed") },
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("settings_user_name_input")
+                                )
+                                Button(
+                                    onClick = {
+                                        viewModel.setUserName(nameDraft)
+                                        viewModel.showSnackbar("Saved profile name ✓")
+                                    },
+                                    enabled = hasUnsavedName,
+                                    modifier = Modifier
+                                        .height(52.dp)
+                                        .testTag("settings_save_user_name_button")
+                                ) {
+                                    Text("Save")
+                                }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            Text(
+                                text = "Current English level (CEFR)",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Row(
                                 modifier = Modifier
@@ -702,6 +749,164 @@ fun SettingsScreen(
                                         modifier = Modifier.testTag("english_level_chip_$levelOption")
                                     )
                                 }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            Text(
+                                text = "Target IELTS Band",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("6.0", "6.5", "7.0", "7.5", "8.0", "8.5").forEach { bandOption ->
+                                    val isSelected = ieltsTargetBand == bandOption
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.setIeltsTargetBand(bandOption) },
+                                        label = { Text("Band $bandOption") },
+                                        leadingIcon = if (isSelected) {
+                                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                        } else null,
+                                        modifier = Modifier.testTag("ielts_band_chip_$bandOption")
+                                    )
+                                }
+                            }
+                        }
+
+                        // HABIT TARGETS (DAILY & WEEKLY NEW WORDS)
+                        SettingsSectionCard(
+                            title = "Daily & weekly habit targets",
+                            modifier = Modifier.testTag("settings_habit_targets_card")
+                        ) {
+                            Text(
+                                text = "Set achievable daily and weekly word goals. Once you finish your daily target, Sada generates a tailored IELTS Speaking prompt to practice today's words with any AI voice agent.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Daily New Words
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("New words per day", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    text = "$newCardsPerDay / day",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.testTag("settings_daily_new_words_value")
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(5, 10, 15, 20, 30, 50).forEach { count ->
+                                    FilterChip(
+                                        selected = newCardsPerDay == count,
+                                        onClick = { viewModel.setNewCardsPerDay(count) },
+                                        label = { Text("$count") },
+                                        modifier = Modifier.testTag("settings_daily_new_chip_$count")
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            // Weekly New Words Target
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Weekly words target", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    text = "$weeklyNewWordsTarget / week",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.testTag("settings_weekly_target_value")
+                                )
+                            }
+                            Slider(
+                                value = weeklyNewWordsTarget.coerceIn(10, 350).toFloat(),
+                                onValueChange = { viewModel.setWeeklyNewWordsTarget(((it.toInt() + 2) / 5) * 5) },
+                                valueRange = 10f..350f,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("settings_weekly_target_slider")
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(35, 70, 105, 140, 210).forEach { wTarget ->
+                                    FilterChip(
+                                        selected = weeklyNewWordsTarget == wTarget,
+                                        onClick = { viewModel.setWeeklyNewWordsTarget(wTarget) },
+                                        label = { Text("$wTarget") },
+                                        modifier = Modifier.testTag("settings_weekly_target_chip_$wTarget")
+                                    )
+                                }
+                                AssistChip(
+                                    onClick = { viewModel.setWeeklyNewWordsTarget(newCardsPerDay * 7) },
+                                    label = { Text("Sync (${newCardsPerDay * 7})") },
+                                    modifier = Modifier.testTag("settings_weekly_sync_chip")
+                                )
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            // Daily Review Goal
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Daily review goal", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    text = "$dailyGoalTarget reviews",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(10, 20, 30, 50, 80).forEach { goal ->
+                                    FilterChip(
+                                        selected = dailyGoalTarget == goal,
+                                        onClick = { viewModel.setDailyGoalTarget(goal) },
+                                        label = { Text("$goal") },
+                                        modifier = Modifier.testTag("settings_daily_review_chip_$goal")
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                shape = MaterialTheme.shapes.small,
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "This week: $weeklyWordsStudiedCount / $weeklyNewWordsTarget words studied · Daily target: $dailyGoalTarget reviews",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                )
                             }
                         }
 
@@ -1443,19 +1648,37 @@ fun SettingsScreen(
 
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                            Text("Gemini model", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Gemini model", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                Surface(
+                                    shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+                                ) {
+                                    Text(
+                                        text = "Auto-Failover Enabled",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "If a model is busy (HTTP 503) or unavailable (404), Sada automatically fails over to working backup models.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             var modelMenuExpanded by remember { mutableStateOf(false) }
                             val commonModels = listOf(
                                 "gemini-3.5-flash-lite",
-                                "gemini-4-hydrogen",
+                                "gemini-3.1-flash-lite",
                                 "gemini-3.5-flash",
-                                "gemini-3.5-pro",
-                                "gemini-2.5-flash",
-                                "gemini-2.5-pro",
-                                "gemini-2.0-flash",
-                                "gemini-2.0-flash-lite",
-                                "gemini-1.5-flash",
-                                "gemini-1.5-pro",
+                                "gemini-3.6-flash",
+                                "gemini-flash-lite-latest",
+                                "gemini-3-flash-preview",
                                 "Custom..."
                             )
 
@@ -1704,7 +1927,7 @@ fun SettingsScreen(
                         // OPENROUTER & PEXELS KEYS
                         SingleApiKeyCard(
                             heading = "OpenRouter API key",
-                            description = "Fallback provider when Gemini hits rate limits or is locked.",
+                            description = "Optional backup AI provider when Gemini hits rate limits or is offline.",
                             currentKey = openRouterApiKey,
                             placeholder = "Enter OpenRouter API key",
                             testTagPrefix = "openrouter_key",
@@ -1716,10 +1939,10 @@ fun SettingsScreen(
                         )
 
                         SingleApiKeyCard(
-                            heading = "Pexels API key",
-                            description = "Used to fetch real photos for words.",
+                            heading = "Pexels API key (Optional)",
+                            description = "Free web photos from Wikipedia & Wikimedia Commons already work automatically with ZERO API key and save permanently offline. Add a Pexels key only if you want extra HD stock photos.",
                             currentKey = pexelsApiKey,
-                            placeholder = "Enter Pexels API key",
+                            placeholder = "Optional Pexels API key",
                             testTagPrefix = "pexels_key",
                             directLinkUrl = "https://www.pexels.com/api/",
                             directLinkLabel = "Get Pexels API key (Free)",

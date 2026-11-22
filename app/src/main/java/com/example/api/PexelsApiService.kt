@@ -56,15 +56,10 @@ interface PexelsApiService {
         private const val BASE_URL = "https://api.pexels.com/"
 
         fun create(): PexelsApiService {
-            val loggingInterceptor = HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
-            }
-
             val okHttpClient = OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(15, TimeUnit.SECONDS)
-                .writeTimeout(15, TimeUnit.SECONDS)
-                .addInterceptor(loggingInterceptor)
+                .connectTimeout(12, TimeUnit.SECONDS)
+                .readTimeout(12, TimeUnit.SECONDS)
+                .writeTimeout(12, TimeUnit.SECONDS)
                 .build()
 
             val moshi = Moshi.Builder()

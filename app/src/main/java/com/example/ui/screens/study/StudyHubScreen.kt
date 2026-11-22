@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,18 +39,20 @@ import com.example.ui.screens.practice.QuizPracticeView
 import com.example.ui.screens.practice.SpellingPracticeView
 import java.time.LocalDate
 
-enum class StudySubMode { HUB, QUIZ, SPELLING, FREE_BROWSE }
+enum class StudySubMode { HUB, QUIZ, SPELLING, FREE_BROWSE, IELTS_READING }
 
 /**
- * Tab 1: Unified Study Hub (merges former "Review" + "Cards" tabs cleanly).
+ * Tab 1: Unified Study Hub (merges former "Review" + "Cards" tabs + IELTS Reading & Speaking Corner).
  * - Deck filter chips with per-deck due counts
  * - FSRS Spaced Repetition session launcher
+ * - IELTS Reading (built around Today's / This Week's words) & AI Agent Speaking Prompt
  * - Extra Practice: Leeches Drill, Multiple Choice Quiz (optional FSRS), Spelling, Free Browse
  */
 @Composable
 fun StudyHubScreen(
     viewModel: DictionaryViewModel,
     bookmarkedWords: List<WordEntity>,
+    dailyReadingState: com.example.ui.DailyReadingUiState = com.example.ui.DailyReadingUiState.Idle,
     innerPadding: PaddingValues,
     initialSubMode: StudySubMode = StudySubMode.HUB,
     onSubModeExited: () -> Unit = {},
@@ -61,6 +64,8 @@ fun StudyHubScreen(
     val newCardsPerDay by viewModel.newCardsPerDay.collectAsStateWithLifecycle()
     val introducedToday by viewModel.newCardsIntroducedToday.collectAsStateWithLifecycle()
     val quizCountsInFsrs by viewModel.quizCountsInFsrs.collectAsStateWithLifecycle()
+    val todayWords by viewModel.todayStudiedWords.collectAsStateWithLifecycle()
+    val weekWords by viewModel.weekStudiedWords.collectAsStateWithLifecycle()
     val haptics = LocalHapticFeedback.current
     val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
     val borderCol = if (isDark) Color.White.copy(alpha = 0.09f) else Color.Black.copy(alpha = 0.07f)
@@ -98,6 +103,7 @@ fun StudyHubScreen(
                         StudySubMode.QUIZ -> "Multiple Choice Quiz"
                         StudySubMode.SPELLING -> "Spelling Practice"
                         StudySubMode.FREE_BROWSE -> "Free Browse Cards (No FSRS)"
+                        StudySubMode.IELTS_READING -> "IELTS Reading Corner"
                         StudySubMode.HUB -> "Study"
                     },
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -133,6 +139,13 @@ fun StudyHubScreen(
                     FlashcardsTabContent(
                         viewModel = viewModel,
                         bookmarkedWords = bookmarkedWords,
+                        innerPadding = PaddingValues(0.dp)
+                    )
+                }
+                StudySubMode.IELTS_READING -> {
+                    com.example.ui.screens.reading.DailyReadingTabContent(
+                        viewModel = viewModel,
+                        readingState = dailyReadingState,
                         innerPadding = PaddingValues(0.dp)
                     )
                 }
@@ -323,7 +336,29 @@ fun StudyHubScreen(
                 }
             }
 
-            // Extra Practice Modes (No Listening Recall — deferred to v1.4+)
+            // IELTS Practice Corner (Reading built from Today's/Week's words + Speaking AI Prompt)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppleSectionHeader(title = "IELTS Reading & Speaking")
+                AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                    StudyModeRow(
+                        icon = Icons.AutoMirrored.Filled.MenuBook,
+                        tint = MaterialTheme.colorScheme.primary,
+                        title = "IELTS Reading Corner",
+                        subtitle = "Academic passages & stories built around today's & this week's words",
+                        badgeText = "IELTS",
+                        onClick = { subMode = StudySubMode.IELTS_READING },
+                        testTag = "study_mode_ielts_reading_row"
+                    )
+                }
+                IeltsSpeakingPromptCard(
+                    viewModel = viewModel,
+                    todayWords = todayWords,
+                    weekWords = weekWords,
+                    defaultScope = com.example.domain.PracticeWordScope.TODAY
+                )
+            }
+
+            // Extra Practice Modes
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 AppleSectionHeader(title = "Extra Practice")
                 AppleInsetGroupedCard(cornerRadius = 18.dp) {

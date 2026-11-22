@@ -127,9 +127,21 @@ fun WordLocalImageBanner(
     val refreshVersion by viewModel.localImageRefreshVersion.collectAsStateWithLifecycle()
     val cyclingWord by viewModel.cyclingPhotoWord.collectAsStateWithLifecycle()
 
-    val origin = remember(wordEntity.word, refreshVersion) {
-        viewModel.getLocalImageOrigin(wordEntity.word)
+    val cachedOrigin = remember(wordEntity.word, refreshVersion) {
+        viewModel.getLocalImageOriginIfCached(wordEntity.word)
     }
+    val resolvedOrigin by produceState(
+        initialValue = cachedOrigin,
+        key1 = wordEntity.word,
+        key2 = refreshVersion
+    ) {
+        if (cachedOrigin != null) {
+            value = cachedOrigin
+        } else {
+            value = viewModel.resolveLocalImageOriginAsync(wordEntity.word)
+        }
+    }
+    val origin = resolvedOrigin
     val remoteUrl = remember(wordEntity.imagePrompt) {
         if (wordEntity.imagePrompt.startsWith("http://") || wordEntity.imagePrompt.startsWith("https://")) {
             wordEntity.imagePrompt
@@ -137,9 +149,58 @@ fun WordLocalImageBanner(
             ""
         }
     }
+    val isCycling = cyclingWord.equals(wordEntity.word.trim(), ignoreCase = true)
 
-    // Do not attempt rendering if there is neither a local image nor an online URL
+    // Still warming up in background: avoid blocking Main Thread or flashing error
+    if (origin == null && remoteUrl.isBlank()) {
+        return
+    }
+
+    // No bundled photo yet and no remote URL -> offer clean 1-tap keyless Web Photo fetch (saves offline!)
     if (origin == LocalImageOrigin.NONE && remoteUrl.isBlank()) {
+        if (!showRefreshButton) return
+        Surface(
+            onClick = { viewModel.cycleNextPhoto(wordEntity) },
+            enabled = !isCycling,
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("fetch_web_photo_empty_button")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                if (isCycling) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Loading web photo & saving offline...",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.AddPhotoAlternate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Load Web Photo (Saves Offline)",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
         return
     }
 
@@ -153,8 +214,6 @@ fun WordLocalImageBanner(
             version = refreshVersion
         )
     }
-
-    val isCycling = cyclingWord.equals(wordEntity.word.trim(), ignoreCase = true)
 
     Box(
         modifier = modifier
@@ -203,7 +262,7 @@ fun WordLocalImageBanner(
         val badgeLabel = when (origin) {
             LocalImageOrigin.SAVED_PERMANENT -> "Saved Offline Asset ✓"
             LocalImageOrigin.BUNDLED_OFFLINE -> "Local Photo ✓"
-            LocalImageOrigin.NONE -> "Saving Offline..."
+            LocalImageOrigin.NONE, null -> "Saving Offline..."
         }
         Surface(
             shape = RoundedCornerShape(20.dp),
@@ -281,7 +340,14 @@ fun WordAiHelperSheet(
     val wordKey = wordEntity.word.trim().lowercase()
     val isEnriching = enrichingWord == wordKey
     val isCyclingPhoto = cyclingWord == wordKey
-    val imageOrigin = remember(wordKey, refreshVersion) { viewModel.getLocalImageOrigin(wordKey) }
+    val cachedOrigin = remember(wordKey, refreshVersion) { viewModel.getLocalImageOriginIfCached(wordKey) }
+    val imageOrigin by produceState(
+        initialValue = cachedOrigin ?: LocalImageOrigin.NONE,
+        key1 = wordKey,
+        key2 = refreshVersion
+    ) {
+        value = cachedOrigin ?: viewModel.resolveLocalImageOriginAsync(wordKey)
+    }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 

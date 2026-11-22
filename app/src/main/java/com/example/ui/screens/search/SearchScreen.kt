@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -73,14 +75,14 @@ private enum class DictionaryScope(val label: String) {
 @Composable
 fun SearchTabContent(
     viewModel: DictionaryViewModel,
-    searchQuery: String,
-    uiState: SearchUiState,
     innerPadding: PaddingValues,
     onOpenApiSettings: () -> Unit = {},
     onOpenCourses: () -> Unit = {},
     onOpenCourseOccurrence: (bookNum: Int, unitNum: Int) -> Unit = { _, _ -> onOpenCourses() },
     onOpenReview: () -> Unit = {}
 ) {
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val uiState by viewModel.searchUiState.collectAsStateWithLifecycle()
     var scope by rememberSaveable { mutableStateOf(DictionaryScope.ALL) }
     var deckStatusFilter by rememberSaveable { mutableStateOf(WordStatusFilter.ALL) }
     var showClearHistoryConfirm by rememberSaveable { mutableStateOf(false) }
@@ -205,7 +207,7 @@ fun SearchTabContent(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    when (uiState) {
+                    when (val state = uiState) {
                         is SearchUiState.Loading -> {
                             AppleInsetGroupedCard(cornerRadius = 18.dp) {
                                 Row(
@@ -225,9 +227,9 @@ fun SearchTabContent(
                         }
                         is SearchUiState.Success -> {
                             WordDetailsCard(
-                                wordEntity = uiState.word,
-                                onSpeak = { viewModel.speak(uiState.word.word) },
-                                onBookmarkToggle = { viewModel.toggleBookmark(uiState.word) },
+                                wordEntity = state.word,
+                                onSpeak = { viewModel.speak(state.word.word) },
+                                onBookmarkToggle = { viewModel.toggleBookmark(state.word) },
                                 viewModel = viewModel,
                                 curriculumOccurrences = occurrences,
                                 onOpenCourses = onOpenCourses,
@@ -237,7 +239,7 @@ fun SearchTabContent(
                         }
                         is SearchUiState.Error -> {
                             ErrorStateCard(
-                                message = uiState.message,
+                                message = state.message,
                                 onRetry = { viewModel.performSearch(searchQuery) },
                                 onOpenApiSettings = onOpenApiSettings
                             )
@@ -299,38 +301,44 @@ fun SearchTabContent(
                 }
             }
 
-            // 4. Scrollable Body based on Scope & Query
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                when (scope) {
-                    DictionaryScope.MY_DECK -> {
-                        MyDeckScopeBody(
-                            query = searchQuery,
-                            bookmarkedWords = bookmarkedWords,
-                            statusFilter = deckStatusFilter,
-                            onSelectStatus = { deckStatusFilter = it },
-                            onOpenWord = { viewModel.openWordFromSearch(it.word, pushToBackStack = false) },
-                            onSpeak = { viewModel.speak(it.word) },
-                            onOpenCourses = onOpenCourses
-                        )
-                    }
-                    DictionaryScope.HISTORY -> {
-                        HistoryScopeBody(
-                            query = searchQuery,
-                            historyWords = historyWords,
-                            bookmarkedSet = bookmarkedSet,
-                            onOpenWord = { viewModel.openWordFromSearch(it.word, pushToBackStack = false) },
-                            onSpeak = { viewModel.speak(it.word) },
-                            onToggleDeck = { viewModel.quickToggleStudyWord(it.word, it.arabicMeaning) },
-                            onRequestClear = { showClearHistoryConfirm = true }
-                        )
-                    }
-                    DictionaryScope.ALL, DictionaryScope.BOOKS -> {
+            // 4. Body based on Scope & Query (My Deck & History use true virtualized LazyColumn!)
+            when (scope) {
+                DictionaryScope.MY_DECK -> {
+                    MyDeckScopeBody(
+                        query = searchQuery,
+                        bookmarkedWords = bookmarkedWords,
+                        statusFilter = deckStatusFilter,
+                        onSelectStatus = { deckStatusFilter = it },
+                        onOpenWord = { viewModel.openWordFromSearch(it.word, pushToBackStack = false) },
+                        onSpeak = { viewModel.speak(it.word) },
+                        onOpenCourses = onOpenCourses,
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    )
+                }
+                DictionaryScope.HISTORY -> {
+                    HistoryScopeBody(
+                        query = searchQuery,
+                        historyWords = historyWords,
+                        bookmarkedSet = bookmarkedSet,
+                        onOpenWord = { viewModel.openWordFromSearch(it.word, pushToBackStack = false) },
+                        onSpeak = { viewModel.speak(it.word) },
+                        onToggleDeck = { viewModel.quickToggleStudyWord(it.word, it.arabicMeaning) },
+                        onRequestClear = { showClearHistoryConfirm = true },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    )
+                }
+                DictionaryScope.ALL, DictionaryScope.BOOKS -> {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
                         val trimmed = searchQuery.trim()
                         if (trimmed.length >= 2) {
                             LiveSearchResultsBody(
@@ -356,9 +364,9 @@ fun SearchTabContent(
                                 onSelectCefr = { viewModel.selectCefrBrowse(it) }
                             )
                         }
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -966,6 +974,15 @@ private fun QuickDictionaryRow(
     }
 }
 
+private fun groupedListItemShape(index: Int, totalCount: Int): RoundedCornerShape {
+    return when {
+        totalCount <= 1 -> RoundedCornerShape(18.dp)
+        index == 0 -> RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+        index == totalCount - 1 -> RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp)
+        else -> RoundedCornerShape(0.dp)
+    }
+}
+
 @Composable
 private fun MyDeckScopeBody(
     query: String,
@@ -974,34 +991,9 @@ private fun MyDeckScopeBody(
     onSelectStatus: (WordStatusFilter) -> Unit,
     onOpenWord: (WordEntity) -> Unit,
     onSpeak: (WordEntity) -> Unit,
-    onOpenCourses: () -> Unit
+    onOpenCourses: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    // Status Filter Pills
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        WordStatusFilter.entries.forEach { st ->
-            val selected = statusFilter == st
-            Surface(
-                onClick = { onSelectStatus(st) },
-                shape = RoundedCornerShape(18.dp),
-                color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.heightIn(min = 40.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-                    Text(
-                        text = st.name.lowercase().replaceFirstChar { it.uppercase() },
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-
     val filtered = remember(bookmarkedWords, query, statusFilter) {
         filterWordList(
             list = bookmarkedWords,
@@ -1012,70 +1004,116 @@ private fun MyDeckScopeBody(
         )
     }
 
-    if (filtered.isEmpty()) {
-        AppleInsetGroupedCard(cornerRadius = 18.dp) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = if (bookmarkedWords.isEmpty()) "Your Study Deck is Empty" else "No matching cards",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                )
-                Text(
-                    text = "Add words from Courses or Search to build your spaced-repetition deck.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-                Button(onClick = onOpenCourses, shape = RoundedCornerShape(14.dp), modifier = Modifier.height(48.dp)) {
-                    Text("Open Courses")
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Status Filter Pills
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            WordStatusFilter.entries.forEach { st ->
+                val selected = statusFilter == st
+                Surface(
+                    onClick = { onSelectStatus(st) },
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.heightIn(min = 40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Text(
+                            text = st.name.lowercase().replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
-        return
-    }
 
-    AppleInsetGroupedCard(cornerRadius = 18.dp) {
-        filtered.take(100).forEachIndexed { idx, w ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenWord(w) }
-                    .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = w.word.replaceFirstChar { it.uppercase() },
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        CardStatusBadge(wordEntity = w)
+        if (filtered.isEmpty()) {
+            AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = if (bookmarkedWords.isEmpty()) "Your Study Deck is Empty" else "No matching cards",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                    )
+                    Text(
+                        text = "Add words from Courses or Search to build your spaced-repetition deck.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Button(onClick = onOpenCourses, shape = RoundedCornerShape(14.dp), modifier = Modifier.height(48.dp)) {
+                        Text("Open Courses")
                     }
-                    if (w.arabicMeaning.isNotBlank()) {
-                        Text(
-                            text = w.arabicMeaning,
-                            style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Rtl),
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                IconButton(onClick = { onSpeak(w) }, modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Pronounce", tint = MaterialTheme.colorScheme.primary)
                 }
             }
-            if (idx < filtered.take(100).lastIndex) {
-                AppleInsetDivider(startIndent = 16.dp)
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                itemsIndexed(
+                    items = filtered,
+                    key = { _, w -> "deck_${w.word.lowercase()}" }
+                ) { idx, w ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = groupedListItemShape(idx, filtered.size),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onOpenWord(w) }
+                                    .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(
+                                            text = w.word.replaceFirstChar { it.uppercase() },
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        CardStatusBadge(wordEntity = w)
+                                    }
+                                    if (w.arabicMeaning.isNotBlank()) {
+                                        Text(
+                                            text = w.arabicMeaning,
+                                            style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Rtl),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { onSpeak(w) }, modifier = Modifier.size(48.dp)) {
+                                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "Pronounce", tint = MaterialTheme.colorScheme.primary)
+                                }
+                            }
+                            if (idx < filtered.lastIndex) {
+                                AppleInsetDivider(startIndent = 16.dp)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1089,7 +1127,8 @@ private fun HistoryScopeBody(
     onOpenWord: (WordEntity) -> Unit,
     onSpeak: (WordEntity) -> Unit,
     onToggleDeck: (WordEntity) -> Unit,
-    onRequestClear: () -> Unit
+    onRequestClear: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val filtered = remember(historyWords, query) {
         val q = query.trim().lowercase()
@@ -1101,45 +1140,65 @@ private fun HistoryScopeBody(
         }
     }
 
-    if (historyWords.isNotEmpty()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AppleSectionHeader(title = "Lookup History (${filtered.size})")
-            TextButton(onClick = onRequestClear) {
-                Text("Clear", color = MaterialTheme.colorScheme.error)
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        if (historyWords.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AppleSectionHeader(title = "Lookup History (${filtered.size})")
+                TextButton(onClick = onRequestClear) {
+                    Text("Clear", color = MaterialTheme.colorScheme.error)
+                }
             }
         }
-    }
 
-    if (filtered.isEmpty()) {
-        AppleInsetGroupedCard(cornerRadius = 18.dp) {
-            Text(
-                text = "No lookup history yet.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(24.dp)
-            )
-        }
-        return
-    }
-
-    AppleInsetGroupedCard(cornerRadius = 18.dp) {
-        filtered.take(80).forEachIndexed { idx, w ->
-            QuickDictionaryRow(
-                word = w.word,
-                arabic = w.arabicMeaning,
-                badge = w.partOfSpeech,
-                inDeck = w.word.lowercase() in bookmarkedSet,
-                onOpen = { onOpenWord(w) },
-                onSpeak = { onSpeak(w) },
-                onToggleDeck = { onToggleDeck(w) }
-            )
-            if (idx < filtered.take(80).lastIndex) {
-                AppleInsetDivider(startIndent = 16.dp)
+        if (filtered.isEmpty()) {
+            AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                Text(
+                    text = "No lookup history yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(24.dp)
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentPadding = PaddingValues(bottom = 16.dp)
+            ) {
+                itemsIndexed(
+                    items = filtered,
+                    key = { _, w -> "hist_${w.word.lowercase()}" }
+                ) { idx, w ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = groupedListItemShape(idx, filtered.size),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            QuickDictionaryRow(
+                                word = w.word,
+                                arabic = w.arabicMeaning,
+                                badge = w.partOfSpeech,
+                                inDeck = w.word.lowercase() in bookmarkedSet,
+                                onOpen = { onOpenWord(w) },
+                                onSpeak = { onSpeak(w) },
+                                onToggleDeck = { onToggleDeck(w) }
+                            )
+                            if (idx < filtered.lastIndex) {
+                                AppleInsetDivider(startIndent = 16.dp)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1709,6 +1768,55 @@ fun WordDetailsCard(
                             text = wordEntity.mnemonic,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+
+        // 7. Inline 1-tap AI Dictionary Enrichment Card (when extra synonyms/memory aid aren't loaded yet)
+        if (wordEntity.synonyms.isBlank() && wordEntity.mnemonic.isBlank()) {
+            val enrichingWord by viewModel.enrichingWord.collectAsStateWithLifecycle()
+            val isEnriching = enrichingWord == wordEntity.word.trim().lowercase()
+            AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isEnriching) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.enrichWordWithAi(wordEntity)
+                        }
+                        .padding(16.dp)
+                        .testTag("word_details_inline_ai_enrich_card"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    AppleIconBadge(
+                        icon = Icons.Default.AutoAwesome,
+                        tintColor = MaterialTheme.colorScheme.tertiary,
+                        size = 38.dp,
+                        iconSize = 20.dp
+                    )
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = if (isEnriching) "Loading AI dictionary notes..." else "Get Full AI Notes, Synonyms & Memory Aid",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Fetches synonyms, antonyms, memory tip & richer usage and saves them offline forever.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (isEnriching) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Fetch AI notes",
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }

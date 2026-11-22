@@ -643,7 +643,11 @@ private fun StudyCardBackFace(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Listen Example", maxLines = 1)
+                                Text(
+                                    text = "Listen",
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
                             }
                             OutlinedButton(
                                 onClick = {
@@ -663,7 +667,7 @@ private fun StudyCardBackFace(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text(if (mined) "Mined" else "Mine")
+                                Text(if (mined) "Mined" else "Mine", maxLines = 1, softWrap = false)
                             }
                         }
                     }
@@ -718,7 +722,7 @@ private fun StudyCardBackFace(
                 }
             }
 
-            // 7. Dedicated Per-Word ✨ AI Helper Button (48dp)
+            // 7. Dedicated Per-Word ✨ AI Helper Button (48dp, crisp single-line layout)
             val helperInteraction = remember { MutableInteractionSource() }
             Surface(
                 onClick = {
@@ -731,12 +735,14 @@ private fun StudyCardBackFace(
                 border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.38f)),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .heightIn(min = 48.dp)
                     .applePressScale(helperInteraction, 0.97f)
                     .testTag("card_open_ai_helper_button")
             ) {
                 Row(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -748,9 +754,11 @@ private fun StudyCardBackFace(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "AI Helper · Extra Notes, AI Voice & Photo",
+                        text = "AI Helper · Notes, Voice & Photo",
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
             }

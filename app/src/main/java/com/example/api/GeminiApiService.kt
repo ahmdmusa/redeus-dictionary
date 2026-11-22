@@ -30,15 +30,10 @@ interface GeminiApiService {
         private const val BASE_URL = "https://generativelanguage.googleapis.com/"
 
         fun create(): GeminiApiService {
-            val loggingInterceptor = HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
-            }
-
             val okHttpClient = OkHttpClient.Builder()
-                .connectTimeout(60, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(60, TimeUnit.SECONDS)
-                .addInterceptor(loggingInterceptor)
+                .connectTimeout(20, TimeUnit.SECONDS)
+                .readTimeout(35, TimeUnit.SECONDS)
+                .writeTimeout(20, TimeUnit.SECONDS)
                 .build()
 
             val moshi = Moshi.Builder()

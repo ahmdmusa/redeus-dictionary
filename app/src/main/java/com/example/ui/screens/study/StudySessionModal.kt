@@ -536,11 +536,20 @@ fun SessionSummaryScreen(
 ) {
     val currentStreak by viewModel.currentStreak.collectAsStateWithLifecycle()
     val dailyGoal by viewModel.dailyGoalTarget.collectAsStateWithLifecycle()
+    val weeklyTarget by viewModel.weeklyNewWordsTarget.collectAsStateWithLifecycle()
+    val weeklyStudied by viewModel.weeklyWordsStudiedCount.collectAsStateWithLifecycle()
     val detailedStats by viewModel.detailedSrsStats.collectAsStateWithLifecycle()
+    val todayWords by viewModel.todayStudiedWords.collectAsStateWithLifecycle()
+    val weekWords by viewModel.weekStudiedWords.collectAsStateWithLifecycle()
     val reducedMotion = LocalReducedMotionEnabled.current
 
     val todayDone = detailedStats.streakHistoryLast30Days.lastOrNull { it.isToday }?.count ?: summary.cardsStudied
     val safeGoal = dailyGoal.coerceAtLeast(1)
+    val dailyHit = todayDone >= safeGoal
+    val weeklyHit = weeklyStudied >= weeklyTarget.coerceAtLeast(1)
+    val streakMilestone = remember(currentStreak) {
+        com.example.domain.IeltsPracticePromptBuilder.detectStreakMilestone(currentStreak)
+    }
     val targetProgress = (todayDone.toFloat() / safeGoal.toFloat()).coerceIn(0f, 1f)
     val animatedRing by animateFloatAsState(
         targetValue = targetProgress,
@@ -611,17 +620,39 @@ fun SessionSummaryScreen(
                 }
             }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "Session Complete",
+                    text = when {
+                        weeklyHit -> "Weekly Target Achieved!"
+                        dailyHit -> "Daily Target Reached!"
+                        else -> "Session Complete"
+                    },
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
-                Text(
-                    text = "🔥 $currentStreak-day streak",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color(0xFFFF9F0A)
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "🔥 $currentStreak-day streak",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                    if (streakMilestone != null) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "★ ${streakMilestone}d Milestone",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
             }
 
             // 3 Metrics Row
@@ -633,6 +664,20 @@ fun SessionSummaryScreen(
                 SummaryStatTile(value = "${summary.accuracyPercent}%", label = "Accuracy", modifier = Modifier.weight(1f))
                 SummaryStatTile(value = formattedTime, label = "Time", modifier = Modifier.weight(1f))
             }
+
+            // Post-Target IELTS Speaking Practice Prompt Card
+            IeltsSpeakingPromptCard(
+                viewModel = viewModel,
+                todayWords = todayWords,
+                weekWords = weekWords,
+                defaultScope = com.example.domain.PracticeWordScope.TODAY,
+                headline = if (dailyHit) {
+                    "Daily Target Done — Practice Speaking Now!"
+                } else {
+                    "Practice Today's Words in IELTS Speaking"
+                },
+                subtitle = "Copy a tailored IELTS Speaking prompt with your session words and speak live with ChatGPT Voice, Gemini, or Claude."
+            )
 
             // Hardest Words Recap (any card rated Again during this session)
             if (summary.hardestWords.isNotEmpty()) {
@@ -684,7 +729,7 @@ fun SessionSummaryScreen(
             }
 
             Text(
-                text = "Tomorrow: ${summary.tomorrowReviews} reviews · ${summary.tomorrowNew} new",
+                text = "Tomorrow: ${summary.tomorrowReviews} reviews · ${summary.tomorrowNew} new · Week: $weeklyStudied/$weeklyTarget words",
                 style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -724,6 +769,12 @@ fun SessionSummaryScreen(
                 }
             }
         }
+
+        // Single-shot lightweight milestone confetti burst on session completion
+        MilestoneConfettiBurst(
+            triggerKey = "${summary.cardsStudied}_${dailyHit}_${streakMilestone}",
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 

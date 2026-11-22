@@ -67,12 +67,68 @@ class LocalWordImageStore private constructor(
     @Volatile
     private var dbUnavailable: Boolean = false
 
+    @Volatile
+    private var bundledWordKeysCache: Set<String>? = null
+
+    private val savedWordFileNamesCache: MutableSet<String> =
+        java.util.Collections.synchronizedSet(HashSet())
+
+    @Volatile
+    private var savedCacheLoaded: Boolean = false
+
+    @Volatile
+    private var warmUpStarted: Boolean = false
+
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(12, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
         .callTimeout(15, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * Pre-copies word_images.db (28MB) and loads all ~3,586 bundled word keys + saved filenames
+     * into lightweight RAM HashSets (~150KB) on a background I/O thread.
+     * Eliminates main-thread SQLite / filesystem jank during card flips and dictionary detail views.
+     */
+    fun warmUpSync() {
+        ensureSavedCacheLoaded()
+        ensureBundledKeysLoaded()
+    }
+
+    private fun ensureSavedCacheLoaded() {
+        if (savedCacheLoaded) return
+        synchronized(savedWordFileNamesCache) {
+            if (savedCacheLoaded) return
+            try {
+                val files = savedDir.listFiles { f -> f.isFile && f.name.endsWith(".webp") && f.length() > 64L }
+                savedWordFileNamesCache.clear()
+                files?.forEach { savedWordFileNamesCache.add(it.name) }
+            } catch (_: Throwable) {
+            }
+            savedCacheLoaded = true
+        }
+    }
+
+    private fun ensureBundledKeysLoaded(): Set<String>? {
+        bundledWordKeysCache?.let { return it }
+        val db = openImagesDb() ?: return null
+        return try {
+            val keys = HashSet<String>(4096)
+            db.rawQuery("SELECT word_lower FROM images", null).use { c ->
+                while (c.moveToNext()) {
+                    keys.add(c.getString(0))
+                }
+            }
+            bundledWordKeysCache = keys
+            keys
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to preload bundled image keys", e)
+            null
+        }
+    }
+
+    fun isWarmedUp(): Boolean = savedCacheLoaded && (bundledWordKeysCache != null || dbUnavailable)
 
     fun normalizedKey(word: String): String {
         return word.trim().lowercase(Locale.ROOT)
@@ -91,6 +147,9 @@ class LocalWordImageStore private constructor(
     }
 
     fun hasSavedPermanentImage(word: String): Boolean {
+        if (savedCacheLoaded) {
+            return savedWordFileNamesCache.contains(safeFileName(word))
+        }
         val f = savedImageFile(word)
         return f.exists() && f.isFile && f.length() > 64L
     }
@@ -98,6 +157,7 @@ class LocalWordImageStore private constructor(
     fun hasBundledImage(word: String): Boolean {
         val key = normalizedKey(word)
         if (key.isBlank()) return false
+        bundledWordKeysCache?.let { return it.contains(key) }
         val db = openImagesDb() ?: return false
         return try {
             db.rawQuery("SELECT 1 FROM images WHERE word_lower = ? LIMIT 1", arrayOf(key)).use { c ->
@@ -107,6 +167,23 @@ class LocalWordImageStore private constructor(
             Log.w(TAG, "hasBundledImage failed for '$key'", e)
             false
         }
+    }
+
+    /**
+     * Fast non-blocking RAM-only lookup for Compose UI thread.
+     * Returns null if background warm-up hasn't finished yet (caller resolves on Dispatchers.IO).
+     */
+    fun getLocalImageOriginIfCached(word: String): LocalImageOrigin? {
+        if (!isWarmedUp()) return null
+        val key = normalizedKey(word)
+        if (key.isBlank()) return LocalImageOrigin.NONE
+        if (savedWordFileNamesCache.contains(safeFileName(word))) {
+            return LocalImageOrigin.SAVED_PERMANENT
+        }
+        if (bundledWordKeysCache?.contains(key) == true) {
+            return LocalImageOrigin.BUNDLED_OFFLINE
+        }
+        return LocalImageOrigin.NONE
     }
 
     fun getLocalImageOrigin(word: String): LocalImageOrigin {
@@ -132,6 +209,7 @@ class LocalWordImageStore private constructor(
     }
 
     fun getBundledImageCount(): Int {
+        bundledWordKeysCache?.let { return it.size }
         val db = openImagesDb() ?: return 0
         return try {
             db.rawQuery("SELECT COUNT(*) FROM images", null).use { c ->
@@ -143,6 +221,7 @@ class LocalWordImageStore private constructor(
     }
 
     fun getSavedPermanentImageCount(): Int {
+        if (savedCacheLoaded) return savedWordFileNamesCache.size
         return savedDir.listFiles { f -> f.isFile && f.name.endsWith(".webp") && f.length() > 64L }?.size ?: 0
     }
 
@@ -165,6 +244,7 @@ class LocalWordImageStore private constructor(
                 tmpFile.copyTo(outFile, overwrite = true)
                 tmpFile.delete()
             }
+            savedWordFileNamesCache.add(outFile.name)
             outFile
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save permanent image for '$word'", e)
@@ -184,7 +264,7 @@ class LocalWordImageStore private constructor(
         try {
             val req = Request.Builder()
                 .url(url)
-                .header("User-Agent", "RedeusDictionary/1.3")
+                .header("User-Agent", "SadaEnglishApp/1.5 (https://github.com/ahmdmusa/redeus-dictionary)")
                 .get()
                 .build()
             httpClient.newCall(req).execute().use { resp ->
@@ -204,6 +284,7 @@ class LocalWordImageStore private constructor(
 
     fun deleteSavedPermanentImage(word: String): Boolean {
         val f = savedImageFile(word)
+        savedWordFileNamesCache.remove(f.name)
         return if (f.exists()) f.delete() else false
     }
 

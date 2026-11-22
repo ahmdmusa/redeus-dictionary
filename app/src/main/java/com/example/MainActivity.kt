@@ -5,9 +5,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.SnackbarHost
@@ -123,13 +125,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
-                    val searchUiState by viewModel.searchUiState.collectAsStateWithLifecycle()
                     val bookmarkedWords by viewModel.bookmarksState.collectAsStateWithLifecycle()
                     val dailyReadingState by viewModel.dailyReadingUiState.collectAsStateWithLifecycle()
                     val todayQueueSummary by viewModel.todayQueueSummary.collectAsStateWithLifecycle()
                     val activeStudySession by viewModel.activeStudySession.collectAsStateWithLifecycle()
                     val lastSessionSummary by viewModel.lastSessionSummary.collectAsStateWithLifecycle()
+                    val reducedMotion = com.example.ui.theme.LocalReducedMotionEnabled.current
 
                     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -180,80 +181,99 @@ class MainActivity : ComponentActivity() {
                                     showSettings = true
                                 }
                             ) { innerPadding ->
-                                when (selectedTab) {
-                                    0 -> com.example.ui.screens.today.TodayScreen(
-                                        viewModel = viewModel,
-                                        bookmarkedWords = bookmarkedWords,
-                                        innerPadding = innerPadding,
-                                        onOpenCoursesBook = { book ->
-                                            viewModel.selectCourseBook(book)
-                                            selectedTab = 2
-                                        },
-                                        onOpenCoursesRoot = {
-                                            viewModel.selectCourseBook(null)
-                                            selectedTab = 2
-                                        },
-                                        onOpenQuickSearch = { selectedTab = 3 },
-                                        onOpenProfile = { selectedTab = 4 },
-                                        onOpenQuickQuiz = {
-                                            studyInitialSubMode = com.example.ui.screens.study.StudySubMode.QUIZ
-                                            selectedTab = 1
-                                        },
-                                        onOpenSettings = {
-                                            settingsInitialTab = 1
-                                            showSettings = true
+                                androidx.compose.animation.AnimatedContent(
+                                    targetState = selectedTab,
+                                    transitionSpec = {
+                                        if (reducedMotion) {
+                                            androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
+                                        } else {
+                                            androidx.compose.animation.fadeIn(
+                                                animationSpec = androidx.compose.animation.core.tween(170)
+                                            ) togetherWith androidx.compose.animation.fadeOut(
+                                                animationSpec = androidx.compose.animation.core.tween(120)
+                                            )
                                         }
-                                    )
-                                    1 -> com.example.ui.screens.study.StudyHubScreen(
-                                        viewModel = viewModel,
-                                        bookmarkedWords = bookmarkedWords,
-                                        innerPadding = innerPadding,
-                                        initialSubMode = studyInitialSubMode,
-                                        onSubModeExited = {
-                                            studyInitialSubMode = com.example.ui.screens.study.StudySubMode.HUB
-                                        },
-                                        onNavigateToCourses = { selectedTab = 2 }
-                                    )
-                                    2 -> Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(innerPadding)
-                                    ) {
-                                        com.example.ui.screens.library.CoursesExplorerContent(
+                                    },
+                                    label = "mainTabTransition"
+                                ) { tabIndex ->
+                                    when (tabIndex) {
+                                        0 -> com.example.ui.screens.today.TodayScreen(
                                             viewModel = viewModel,
                                             bookmarkedWords = bookmarkedWords,
-                                            onNavigateToSearch = { selectedTab = 3 },
-                                            onNavigateToReview = {
-                                                viewModel.startUnifiedStudySession()
+                                            innerPadding = innerPadding,
+                                            onOpenCoursesBook = { book ->
+                                                viewModel.selectCourseBook(book)
+                                                selectedTab = 2
+                                            },
+                                            onOpenCoursesRoot = {
+                                                viewModel.selectCourseBook(null)
+                                                selectedTab = 2
+                                            },
+                                            onOpenQuickSearch = { selectedTab = 3 },
+                                            onOpenProfile = { selectedTab = 4 },
+                                            onOpenQuickQuiz = {
+                                                studyInitialSubMode = com.example.ui.screens.study.StudySubMode.QUIZ
+                                                selectedTab = 1
+                                            },
+                                            onOpenIeltsReading = {
+                                                studyInitialSubMode = com.example.ui.screens.study.StudySubMode.IELTS_READING
+                                                selectedTab = 1
+                                            },
+                                            onOpenSettings = {
+                                                settingsInitialTab = 1
+                                                showSettings = true
+                                            }
+                                        )
+                                        1 -> com.example.ui.screens.study.StudyHubScreen(
+                                            viewModel = viewModel,
+                                            bookmarkedWords = bookmarkedWords,
+                                            dailyReadingState = dailyReadingState,
+                                            innerPadding = innerPadding,
+                                            initialSubMode = studyInitialSubMode,
+                                            onSubModeExited = {
+                                                studyInitialSubMode = com.example.ui.screens.study.StudySubMode.HUB
+                                            },
+                                            onNavigateToCourses = { selectedTab = 2 }
+                                        )
+                                        2 -> Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(innerPadding)
+                                        ) {
+                                            com.example.ui.screens.library.CoursesExplorerContent(
+                                                viewModel = viewModel,
+                                                bookmarkedWords = bookmarkedWords,
+                                                onNavigateToSearch = { selectedTab = 3 },
+                                                onNavigateToReview = {
+                                                    viewModel.startUnifiedStudySession()
+                                                }
+                                            )
+                                        }
+                                        3 -> SearchTabContent(
+                                            viewModel = viewModel,
+                                            innerPadding = innerPadding,
+                                            onOpenApiSettings = {
+                                                settingsInitialTab = 2
+                                                showSettings = true
+                                            },
+                                            onOpenCourses = { selectedTab = 2 },
+                                            onOpenCourseOccurrence = { bookNum, unitNum ->
+                                                viewModel.openCourseBookAndUnit(bookNum, unitNum)
+                                                selectedTab = 2
+                                            },
+                                            onOpenReview = { viewModel.startUnifiedStudySession() }
+                                        )
+                                        4 -> com.example.ui.screens.profile.ProfileScreen(
+                                            viewModel = viewModel,
+                                            bookmarkedWords = bookmarkedWords,
+                                            dailyReadingState = dailyReadingState,
+                                            innerPadding = innerPadding,
+                                            onOpenSettingsTab = { tabIdx ->
+                                                settingsInitialTab = tabIdx
+                                                showSettings = true
                                             }
                                         )
                                     }
-                                    3 -> SearchTabContent(
-                                        viewModel = viewModel,
-                                        searchQuery = searchQuery,
-                                        uiState = searchUiState,
-                                        innerPadding = innerPadding,
-                                        onOpenApiSettings = {
-                                            settingsInitialTab = 2
-                                            showSettings = true
-                                        },
-                                        onOpenCourses = { selectedTab = 2 },
-                                        onOpenCourseOccurrence = { bookNum, unitNum ->
-                                            viewModel.openCourseBookAndUnit(bookNum, unitNum)
-                                            selectedTab = 2
-                                        },
-                                        onOpenReview = { viewModel.startUnifiedStudySession() }
-                                    )
-                                    4 -> com.example.ui.screens.profile.ProfileScreen(
-                                        viewModel = viewModel,
-                                        bookmarkedWords = bookmarkedWords,
-                                        dailyReadingState = dailyReadingState,
-                                        innerPadding = innerPadding,
-                                        onOpenSettingsTab = { tabIdx ->
-                                            settingsInitialTab = tabIdx
-                                            showSettings = true
-                                        }
-                                    )
                                 }
                             }
                         }
@@ -262,9 +282,9 @@ class MainActivity : ComponentActivity() {
                             SnackbarHost(
                                 hostState = snackbarHostState,
                                 modifier = Modifier
-                                    .align(Alignment.TopCenter)
-                                    .statusBarsPadding()
-                                    .padding(top = 64.dp, start = 16.dp, end = 16.dp)
+                                    .align(Alignment.BottomCenter)
+                                    .navigationBarsPadding()
+                                    .padding(bottom = 84.dp, start = 16.dp, end = 16.dp)
                             )
                         }
                     }
@@ -275,8 +295,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Check for study reminders on app open/foreground
-        lifecycleScope.launch {
+        // Check for study reminders off the Main Thread
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val db = AppDatabase.getDatabase(applicationContext)
                 val bookmarked = db.wordDao().getBookmarkedWordsList()

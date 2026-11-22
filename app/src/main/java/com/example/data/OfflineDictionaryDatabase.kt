@@ -564,21 +564,22 @@ class OfflineDictionaryDatabase private constructor(
         if (isArabicQuery) {
             val normQuery = ArabicNormalizer.normalize(clean)
             if (normQuery.isBlank()) return emptyList()
+            val arPrefixEnd = normQuery.dropLast(1) + (normQuery.last() + 1)
             val likePattern = "%$normQuery%"
+
+            // 1a. Fast indexed prefix lookup in curriculum_words (hits idx_cw_ar_norm)
             db.rawQuery(
                 """
                 SELECT cw.word, cw.translation_ar, cw.definition_en, b.short_tag
                 FROM curriculum_words cw
                 JOIN books b ON b.book_num = cw.book_num
-                WHERE cw.translation_ar_norm LIKE ?
+                WHERE cw.translation_ar_norm >= ? AND cw.translation_ar_norm < ?
                 ORDER BY
-                    CASE WHEN cw.translation_ar_norm = ? THEN 0
-                         WHEN cw.translation_ar_norm LIKE ? THEN 1
-                         ELSE 2 END ASC,
+                    CASE WHEN cw.translation_ar_norm = ? THEN 0 ELSE 1 END ASC,
                     cw.book_num ASC
                 LIMIT ?
                 """.trimIndent(),
-                arrayOf(likePattern, normQuery, "$normQuery%", (limit * 2).toString())
+                arrayOf(normQuery, arPrefixEnd, normQuery, (limit * 2).toString())
             ).use { c ->
                 while (c.moveToNext() && results.size < limit) {
                     val w = c.getString(0)
@@ -595,21 +596,80 @@ class OfflineDictionaryDatabase private constructor(
                     }
                 }
             }
+
+            // 1b. Substring fallback in curriculum_words (small table ~9.5K rows) if prefix had few hits
+            if (results.size < limit) {
+                db.rawQuery(
+                    """
+                    SELECT cw.word, cw.translation_ar, cw.definition_en, b.short_tag
+                    FROM curriculum_words cw
+                    JOIN books b ON b.book_num = cw.book_num
+                    WHERE cw.translation_ar_norm LIKE ?
+                    ORDER BY cw.book_num ASC
+                    LIMIT ?
+                    """.trimIndent(),
+                    arrayOf(likePattern, (limit * 2).toString())
+                ).use { c ->
+                    while (c.moveToNext() && results.size < limit) {
+                        val w = c.getString(0)
+                        if (seenWords.add(w.lowercase())) {
+                            results.add(
+                                OfflineSearchSuggestion(
+                                    word = w,
+                                    translationAr = c.getString(1),
+                                    previewDef = c.getString(2),
+                                    badge = c.getString(3),
+                                    isCurriculum = true
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2a. Fast indexed prefix lookup in 87K general_dict (hits idx_gd_ar_norm in <2ms!)
             if (!booksOnly && results.size < limit) {
                 val remaining = limit - results.size
                 db.rawQuery(
                     """
                     SELECT word_lower, translation_ar
                     FROM general_dict
-                    WHERE translation_ar_norm LIKE ?
+                    WHERE translation_ar_norm >= ? AND translation_ar_norm < ?
                     ORDER BY
-                        CASE WHEN translation_ar_norm = ? THEN 0
-                             WHEN translation_ar_norm LIKE ? THEN 1
-                             ELSE 2 END ASC,
+                        CASE WHEN translation_ar_norm = ? THEN 0 ELSE 1 END ASC,
                         LENGTH(word_lower) ASC
                     LIMIT ?
                     """.trimIndent(),
-                    arrayOf(likePattern, normQuery, "$normQuery%", (remaining * 2).toString())
+                    arrayOf(normQuery, arPrefixEnd, normQuery, (remaining * 2).toString())
+                ).use { c ->
+                    while (c.moveToNext() && results.size < limit) {
+                        val w = c.getString(0)
+                        if (seenWords.add(w.lowercase())) {
+                            results.add(
+                                OfflineSearchSuggestion(
+                                    word = w,
+                                    translationAr = c.getString(1),
+                                    previewDef = "",
+                                    badge = "Dictionary",
+                                    isCurriculum = false
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2b. Only scan contains on 87K general_dict if query >= 3 chars AND prefix results < 4
+            if (!booksOnly && results.size < 4 && normQuery.length >= 3) {
+                val remaining = limit - results.size
+                db.rawQuery(
+                    """
+                    SELECT word_lower, translation_ar
+                    FROM general_dict
+                    WHERE translation_ar_norm LIKE ?
+                    LIMIT ?
+                    """.trimIndent(),
+                    arrayOf(likePattern, (remaining * 2).toString())
                 ).use { c ->
                     while (c.moveToNext() && results.size < limit) {
                         val w = c.getString(0)
