@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Sada Concept B: Resonance Folio — Stacked Editorial Cards + Side Echo Waves -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.72"
+        android:scaleY="0.72">
+        <!-- Back Card -->
+        <path
+            android:fillColor="#38FFFFFF"
+            android:pathData="M27,20 H61 A10,10 0 0 1 71,30 V58 A10,10 0 0 1 61,68 H27 A10,10 0 0 1 17,58 V30 A10,10 0 0 1 27,20 Z" />
+        <!-- Middle Card -->
+        <path
+            android:fillColor="#75FFFFFF"
+            android:pathData="M24,29 H64 A11,11 0 0 1 75,40 V68 A11,11 0 0 1 64,79 H24 A11,11 0 0 1 13,68 V40 A11,11 0 0 1 24,29 Z" />
+        <!-- Front Editorial Card -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M21,39 H66 A12,12 0 0 1 78,51 V78 A12,12 0 0 1 66,90 H21 A12,12 0 0 1 9,78 V51 A12,12 0 0 1 21,39 Z" />
+        <!-- Editorial Lines + Coral Highlight -->
+        <path
+            android:fillColor="#FF0B4F4A"
+            android:pathData="M22,52 H45 A3.5,3.5 0 0 1 48.5,55.5 A3.5,3.5 0 0 1 45,59 H22 A3.5,3.5 0 0 1 18.5,55.5 A3.5,3.5 0 0 1 22,52 Z" />
+        <path
+            android:fillColor="#520F766E"
+            android:pathData="M22,64 H59 A2.8,2.8 0 0 1 61.8,66.8 A2.8,2.8 0 0 1 59,69.6 H22 A2.8,2.8 0 0 1 19.2,66.8 A2.8,2.8 0 0 1 22,64 Z" />
+        <path
+            android:fillColor="#FFFB7185"
+            android:pathData="M22,74.5 H39 A2.8,2.8 0 0 1 41.8,77.3 A2.8,2.8 0 0 1 39,80.1 H22 A2.8,2.8 0 0 1 19.2,77.3 A2.8,2.8 0 0 1 22,74.5 Z" />
+        <!-- Side Acoustic Echo Arcs -->
+        <path
+            android:pathData="M85,53 C92,59 92,70 85,76"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeWidth="5.8" />
+        <path
+            android:pathData="M93.5,43.5 C104,54.5 104,74.5 93.5,85.5"
+            android:strokeAlpha="0.58"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeLineCap="round"
+            android:strokeWidth="5.2" />
+    </group>
+</vector>

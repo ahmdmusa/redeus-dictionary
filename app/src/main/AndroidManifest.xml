@@ -16,17 +16,13 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyApplication">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTop"
             android:theme="@style/Theme.MyApplication">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -38,6 +34,66 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- Default Launcher Icon: C · Sonic Flip (Sada Teal + Coral) -->
+        <activity-alias
+            android:name=".LauncherSonicFlip"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Optional Launcher Icon: A · Echo Deck -->
+        <activity-alias
+            android:name=".LauncherEchoDeck"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_sada_echo"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_sada_echo"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Optional Launcher Icon: B · Resonance Folio -->
+        <activity-alias
+            android:name=".LauncherResonance"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_sada_resonance"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_sada_resonance"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Optional Launcher Icon: D · Sada Wave S -->
+        <activity-alias
+            android:name=".LauncherWaveS"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_sada_wave"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_sada_wave"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <receiver
             android:name="com.example.reminder.ReminderReceiver"

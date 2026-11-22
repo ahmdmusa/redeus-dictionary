@@ -53,10 +53,20 @@ fun ProfileScreen(
     val savedImages by viewModel.savedLocalImagesCount.collectAsStateWithLifecycle()
     val activeVoiceLabel by viewModel.activeOfflineVoiceLabel.collectAsStateWithLifecycle()
     val selectedAccent by viewModel.selectedAccent.collectAsStateWithLifecycle()
+    val selectedAppIconId by viewModel.selectedAppIcon.collectAsStateWithLifecycle()
+    val selectedThemeId by viewModel.selectedThemeColor.collectAsStateWithLifecycle()
+    val activeIconMeta = remember(selectedAppIconId) { com.example.ui.SadaAppIcon.fromId(selectedAppIconId) }
+    val activeThemeMeta = remember(selectedThemeId) {
+        com.example.ui.theme.SadaBrandThemePresets.firstOrNull { it.id.equals(selectedThemeId, ignoreCase = true) }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshStats()
         viewModel.refreshLocalImageStats()
+    }
+
+    androidx.activity.compose.BackHandler(enabled = subPage != ProfileSubPage.HOME) {
+        subPage = ProfileSubPage.HOME
     }
 
     if (subPage != ProfileSubPage.HOME) {
@@ -126,9 +136,9 @@ fun ProfileScreen(
             // Top KPI Strip
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                ProfileMetricCard(value = "${bookmarkedWords.size}", label = "In Deck", color = Color(0xFF0A84FF), modifier = Modifier.weight(1f))
+                ProfileMetricCard(value = "${bookmarkedWords.size}", label = "In Deck", color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                 ProfileMetricCard(value = "$masteredCount", label = "Mastered", color = Color(0xFF30D158), modifier = Modifier.weight(1f))
                 ProfileMetricCard(
                     value = "${(detailedStats.last30DaysRetentionRate * 100f).toInt()}%",
@@ -136,13 +146,22 @@ fun ProfileScreen(
                     color = Color(0xFFFF9F0A),
                     modifier = Modifier.weight(1f)
                 )
-                ProfileMetricCard(value = "🔥$currentStreak", label = "Streak", color = Color(0xFFFF453A), modifier = Modifier.weight(1f))
+                ProfileMetricCard(value = "🔥$currentStreak", label = "Streak", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.weight(1f))
             }
 
             // Tools & Assets (Apple Inset Grouped)
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                AppleSectionHeader(title = "Tools & Offline Assets")
+                AppleSectionHeader(title = "Sada · Tools & Appearance")
                 AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                    ProfileToolRow(
+                        icon = Icons.Default.Palette,
+                        tint = MaterialTheme.colorScheme.primary,
+                        title = "App Icon & Color Theme",
+                        subtitle = "${activeIconMeta.title} · ${activeThemeMeta?.label ?: "Sada Teal"}",
+                        badgeText = "Customize",
+                        onClick = { onOpenSettingsTab(1) }
+                    )
+                    AppleInsetDivider(startIndent = 60.dp)
                     ProfileToolRow(
                         icon = Icons.Default.Image,
                         tint = Color(0xFF30D158),
@@ -154,7 +173,7 @@ fun ProfileScreen(
                     AppleInsetDivider(startIndent = 60.dp)
                     ProfileToolRow(
                         icon = Icons.Default.RecordVoiceOver,
-                        tint = Color(0xFF0A84FF),
+                        tint = MaterialTheme.colorScheme.secondary,
                         title = "Voice & Offline TTS ($selectedAccent)",
                         subtitle = activeVoiceLabel.ifBlank { "Priority: Natural Offline → Online → AI" },
                         onClick = { onOpenSettingsTab(1) }
@@ -182,7 +201,7 @@ fun ProfileScreen(
                         tint = Color(0xFF8E8E93),
                         title = "FSRS, API Keys & Backup",
                         subtitle = "Algorithm, Gemini/Pexels keys, JSON & Anki CSV",
-                        onClick = { onOpenSettingsTab(1) }
+                        onClick = { onOpenSettingsTab(2) }
                     )
                 }
             }
@@ -219,7 +238,7 @@ private fun ProfileMetricCard(
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 14.dp, horizontal = 6.dp),
+            modifier = Modifier.padding(vertical = 14.dp, horizontal = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
@@ -227,17 +246,19 @@ private fun ProfileMetricCard(
                 text = value,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
+                    fontSize = 16.5.sp,
                     fontFeatureSettings = "tnum"
                 ),
                 color = color,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false
             )
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
+                maxLines = 1,
+                softWrap = false
             )
         }
     }

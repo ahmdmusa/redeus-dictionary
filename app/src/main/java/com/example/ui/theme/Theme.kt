@@ -24,15 +24,13 @@ fun getDynamicColorScheme(
 
 @Composable
 fun MyApplicationTheme(
-    themeColor: String = "yellow",
+    themeColor: String = "sada_teal",
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
-    val useDynamic = dynamicColor &&
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-        (themeColor.equals("yellow", ignoreCase = true) || themeColor.equals("dynamic", ignoreCase = true))
+    val useDynamic = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     val colorScheme = when {
         useDynamic -> {

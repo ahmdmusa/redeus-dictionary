@@ -139,6 +139,13 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // Returning to Today tab on system Back instead of exiting the app abruptly
+                    androidx.activity.compose.BackHandler(
+                        enabled = !showSettings && activeStudySession == null && selectedTab != 0
+                    ) {
+                        selectedTab = 0
+                    }
+
                     Box(modifier = Modifier.fillMaxSize()) {
                         if (showSettings) {
                             SettingsScreen(
@@ -191,6 +198,10 @@ class MainActivity : ComponentActivity() {
                                         onOpenQuickQuiz = {
                                             studyInitialSubMode = com.example.ui.screens.study.StudySubMode.QUIZ
                                             selectedTab = 1
+                                        },
+                                        onOpenSettings = {
+                                            settingsInitialTab = 1
+                                            showSettings = true
                                         }
                                     )
                                     1 -> com.example.ui.screens.study.StudyHubScreen(
@@ -198,6 +209,9 @@ class MainActivity : ComponentActivity() {
                                         bookmarkedWords = bookmarkedWords,
                                         innerPadding = innerPadding,
                                         initialSubMode = studyInitialSubMode,
+                                        onSubModeExited = {
+                                            studyInitialSubMode = com.example.ui.screens.study.StudySubMode.HUB
+                                        },
                                         onNavigateToCourses = { selectedTab = 2 }
                                     )
                                     2 -> Box(
@@ -224,6 +238,10 @@ class MainActivity : ComponentActivity() {
                                             showSettings = true
                                         },
                                         onOpenCourses = { selectedTab = 2 },
+                                        onOpenCourseOccurrence = { bookNum, unitNum ->
+                                            viewModel.openCourseBookAndUnit(bookNum, unitNum)
+                                            selectedTab = 2
+                                        },
                                         onOpenReview = { viewModel.startUnifiedStudySession() }
                                     )
                                     4 -> com.example.ui.screens.profile.ProfileScreen(

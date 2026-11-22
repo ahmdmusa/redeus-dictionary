@@ -64,7 +64,8 @@ fun TodayScreen(
     onOpenCoursesRoot: () -> Unit,
     onOpenQuickSearch: () -> Unit,
     onOpenProfile: () -> Unit,
-    onOpenQuickQuiz: () -> Unit
+    onOpenQuickQuiz: () -> Unit,
+    onOpenSettings: () -> Unit = {}
 ) {
     val todaySummary by viewModel.todayQueueSummary.collectAsStateWithLifecycle()
     val currentStreak by viewModel.currentStreak.collectAsStateWithLifecycle()
@@ -170,59 +171,100 @@ fun TodayScreen(
                 .widthIn(max = if (isExpanded) 960.dp else 640.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Personal Editorial Header + Tappable Streak Pill (48dp min height)
+            // 1. Personal Editorial Header + Sada Eyebrow + Streak Pill + 48dp Settings Gear
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = dateHeader,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = greeting,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontSize = 30.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.5).sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                val streakInteraction = remember { MutableInteractionSource() }
-                Surface(
-                    onClick = onOpenProfile,
-                    interactionSource = streakInteraction,
-                    shape = RoundedCornerShape(18.dp),
-                    color = Color(0xFFFF9F0A).copy(alpha = 0.14f),
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .applePressScale(streakInteraction, 0.95f)
-                        .testTag("today_streak_pill")
-                ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.LocalFireDepartment,
-                            contentDescription = "Streak",
-                            tint = Color(0xFFFF9F0A),
-                            modifier = Modifier.size(20.dp)
+                        Text(
+                            text = "Sada · صَدى",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "${currentStreak}d",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontFeatureSettings = "tnum"
-                            ),
-                            color = Color(0xFFFF9F0A)
+                            text = "· $dateHeader",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                    }
+                    Text(
+                        text = greeting,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = (-0.5).sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val streakInteraction = remember { MutableInteractionSource() }
+                    Surface(
+                        onClick = onOpenProfile,
+                        interactionSource = streakInteraction,
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f),
+                        modifier = Modifier
+                            .heightIn(min = 44.dp)
+                            .applePressScale(streakInteraction, 0.95f)
+                            .testTag("today_streak_pill")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.LocalFireDepartment,
+                                contentDescription = "Streak",
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(19.dp)
+                            )
+                            Text(
+                                text = "${currentStreak}d",
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontFeatureSettings = "tnum"
+                                ),
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onOpenSettings,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("today_settings_button")
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerLow,
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = "Settings",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -506,7 +548,7 @@ private fun ColdStartPlanCard(
                                         fontWeight = FontWeight.Bold,
                                         fontFeatureSettings = "tnum"
                                     ),
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                    color = if (selectedPace == pace) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -524,7 +566,11 @@ private fun ColdStartPlanCard(
                     .testTag("today_start_day_one_button")
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text("Preparing Day 1...")
                 } else {
@@ -532,8 +578,7 @@ private fun ColdStartPlanCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Start Day 1 ($selectedPace Words)",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
             }
@@ -550,8 +595,16 @@ private fun ActiveSessionHeroCard(
     onStartSession: () -> Unit
 ) {
     val startInteraction = remember { MutableInteractionSource() }
+    val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
+    val gradStart = if (isDark) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.primary
+    val gradEnd = if (isDark) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.secondary
+    val heroTextColor = if (isDark) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onPrimary
+    val ctaBg = if (isDark) MaterialTheme.colorScheme.primary else Color.White
+    val ctaFg = if (isDark) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
+
     Surface(
         shape = RoundedCornerShape(26.dp),
+        border = if (isDark) BorderStroke(0.75.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)) else null,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("today_hero_session_card")
@@ -560,9 +613,7 @@ private fun ActiveSessionHeroCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(
-                    Brush.linearGradient(
-                        colors = listOf(Color(0xFF0A84FF), Color(0xFF5E5CE6))
-                    )
+                    Brush.linearGradient(colors = listOf(gradStart, gradEnd))
                 )
                 .padding(20.dp)
         ) {
@@ -578,12 +629,12 @@ private fun ActiveSessionHeroCard(
                             fontSize = 21.sp,
                             fontWeight = FontWeight.Bold
                         ),
-                        color = Color.White
+                        color = heroTextColor
                     )
                     Text(
                         text = "~$estimatedMinutes min",
                         style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
-                        color = Color.White.copy(alpha = 0.88f)
+                        color = heroTextColor.copy(alpha = 0.88f)
                     )
                 }
 
@@ -592,17 +643,17 @@ private fun ActiveSessionHeroCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    HeroBucketTile(count = newCount, label = "● New", accent = Color(0xFF9FD0FF), modifier = Modifier.weight(1f))
-                    HeroBucketTile(count = learningCount, label = "◐ Learning", accent = Color(0xFFFFD08A), modifier = Modifier.weight(1f))
-                    HeroBucketTile(count = reviewCount, label = "✓ Review", accent = Color(0xFFA6F5B9), modifier = Modifier.weight(1f))
+                    HeroBucketTile(count = newCount, label = "● New", accent = Color(0xFF99F6E4), textTint = heroTextColor, modifier = Modifier.weight(1f))
+                    HeroBucketTile(count = learningCount, label = "◐ Learning", accent = Color(0xFFFFD08A), textTint = heroTextColor, modifier = Modifier.weight(1f))
+                    HeroBucketTile(count = reviewCount, label = "✓ Review", accent = Color(0xFFA6F5B9), textTint = heroTextColor, modifier = Modifier.weight(1f))
                 }
 
                 Surface(
                     onClick = onStartSession,
                     interactionSource = startInteraction,
                     shape = RoundedCornerShape(16.dp),
-                    color = Color.White,
-                    contentColor = Color(0xFF0A2A66),
+                    color = ctaBg,
+                    contentColor = ctaFg,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp)
@@ -635,11 +686,12 @@ private fun HeroBucketTile(
     count: Int,
     label: String,
     accent: Color,
+    textTint: Color = Color.White,
     modifier: Modifier = Modifier
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = Color.Black.copy(alpha = 0.20f),
+        color = Color.Black.copy(alpha = 0.22f),
         modifier = modifier
     ) {
         Column(
@@ -658,8 +710,9 @@ private fun HeroBucketTile(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.92f),
-                maxLines = 1
+                color = textTint.copy(alpha = 0.92f),
+                maxLines = 1,
+                softWrap = false
             )
         }
     }
@@ -692,7 +745,8 @@ private fun AllCaughtUpHeroCard(
             Text(
                 text = "All Caught Up for Today",
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
             Text(
                 text = if (todayReviews > 0) {
@@ -701,7 +755,8 @@ private fun AllCaughtUpHeroCard(
                     "No reviews due right now. Add 5 fresh words from your active course!"
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -710,16 +765,22 @@ private fun AllCaughtUpHeroCard(
                 Button(
                     onClick = onStudyExtraNew,
                     shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
                     modifier = Modifier.weight(1f).height(48.dp)
                 ) {
-                    Text(if (totalNewRemainingInDeck > 0) "+5 Extra New" else "+5 From Course")
+                    Text(
+                        text = if (totalNewRemainingInDeck > 0) "+5 Extra New" else "+5 Course",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
                 FilledTonalButton(
                     onClick = onQuickQuiz,
                     shape = RoundedCornerShape(14.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp),
                     modifier = Modifier.weight(1f).height(48.dp)
                 ) {
-                    Text("Quick Quiz")
+                    Text("Quick Quiz", maxLines = 1)
                 }
             }
         }
@@ -893,7 +954,7 @@ private fun DailyTargetsBottomSheet(
                                 Text(
                                     text = "$target",
                                     fontWeight = FontWeight.Bold,
-                                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -915,7 +976,7 @@ private fun DailyTargetsBottomSheet(
                                 Text(
                                     text = "$limit",
                                     fontWeight = FontWeight.Bold,
-                                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -934,10 +995,10 @@ private fun DailyTargetsBottomSheet(
 }
 
 fun bookAccentColor(bookNum: Int): Color = when (bookNum) {
-    1, 2 -> Color(0xFF30D158)
-    3, 4 -> Color(0xFF0A84FF)
-    5, 6 -> Color(0xFFBF5AF2)
-    7 -> Color(0xFFFF9F0A)
-    8 -> Color(0xFF32ADE6)
-    else -> Color(0xFF5E5CE6)
+    1, 2 -> Color(0xFF0F766E)
+    3, 4 -> Color(0xFF0369A1)
+    5, 6 -> Color(0xFF7E22CE)
+    7 -> Color(0xFFC2590A)
+    8 -> Color(0xFF0E7490)
+    else -> Color(0xFF4338CA)
 }

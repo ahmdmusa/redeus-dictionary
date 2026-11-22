@@ -358,14 +358,23 @@ class DictionaryViewModel(
     private val _reminderMinute = MutableStateFlow(0)
     val reminderMinute: StateFlow<Int> = _reminderMinute.asStateFlow()
 
-    private val _selectedThemeColor = MutableStateFlow("purple")
+    private val _selectedThemeColor = MutableStateFlow("sada_teal")
     val selectedThemeColor: StateFlow<String> = _selectedThemeColor.asStateFlow()
+
+    private val _selectedAppIcon = MutableStateFlow(SadaAppIcon.SONIC_FLIP.id)
+    val selectedAppIcon: StateFlow<String> = _selectedAppIcon.asStateFlow()
 
     private val _themeMode = MutableStateFlow("system") // "system", "light", "dark"
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
 
-    private val _dynamicColorEnabled = MutableStateFlow(true)
+    private val _dynamicColorEnabled = MutableStateFlow(false)
     val dynamicColorEnabled: StateFlow<Boolean> = _dynamicColorEnabled.asStateFlow()
+
+    // Serialized audio playback state to eliminate overlapping TTS/MediaPlayer echo
+    private var activeSpeakJob: Job? = null
+    private var lastAppliedTtsSignature: String = ""
+    private var lastSpeakRequestText: String = ""
+    private var lastSpeakRequestAtMs: Long = 0L
 
     private val _useSeparateTtsKeys = MutableStateFlow(false)
     val useSeparateTtsKeys: StateFlow<Boolean> = _useSeparateTtsKeys.asStateFlow()
@@ -715,7 +724,19 @@ class DictionaryViewModel(
     fun setSelectedThemeColor(colorName: String) {
         _selectedThemeColor.value = colorName
         val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
-        sharedPrefs.edit().putString("selected_theme_color", colorName).apply()
+        sharedPrefs.edit()
+            .putString("selected_theme_color", colorName)
+            .putBoolean("dynamic_color_enabled", false)
+            .apply()
+        _dynamicColorEnabled.value = false
+    }
+
+    fun setSelectedAppIcon(icon: SadaAppIcon) {
+        _selectedAppIcon.value = icon.id
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putString("selected_app_icon", icon.id).apply()
+        AppIconManager.applyLauncherIcon(getApplication(), icon)
+        showSnackbar("App icon changed to ${icon.title} — launcher refreshes in a moment")
     }
 
     private fun saveGeminiApiKeysToPrefs(keys: List<String>) {
@@ -1447,9 +1468,17 @@ class DictionaryViewModel(
     fun speakSentence(sentence: String) {
         val clean = sentence.trim()
         if (clean.isEmpty()) return
+        val now = System.currentTimeMillis()
+        if (clean.equals(lastSpeakRequestText, ignoreCase = true) && now - lastSpeakRequestAtMs < 260L) {
+            return
+        }
+        lastSpeakRequestText = clean
+        lastSpeakRequestAtMs = now
+        activeSpeakJob?.cancel()
         if (isTtsReady) {
+            stopAndReleasePlayer()
+            ensureTtsSettingsApplied()
             setLastPronunciationSource("Device TTS")
-            updateTtsSettings()
             tts?.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "sentence_${System.currentTimeMillis()}")
         } else {
             speak(clean)
@@ -1794,12 +1823,14 @@ class DictionaryViewModel(
     }
 
     fun closeStudySession() {
+        stopAllAudioPlayback()
         _activeStudySession.value = null
         _lastSessionSummary.value = null
         refreshStats()
     }
 
     fun dismissSessionSummary() {
+        stopAllAudioPlayback()
         _lastSessionSummary.value = null
         _activeStudySession.value = null
         refreshStats()
@@ -2050,6 +2081,56 @@ class DictionaryViewModel(
         }
     }
 
+    /**
+     * Race-free 1-tap "Study Topic Now": awaits inserting unseen words before launching the session.
+     */
+    fun studyTopicNow(
+        topic: OfflineTopic,
+        topicWords: List<OfflineCurriculumWord>,
+        batchSize: Int = _newCardsPerDay.value
+    ) {
+        viewModelScope.launch {
+            _isAddingCourseWords.value = true
+            try {
+                val extraTags = listOf("Topic: ${topic.nameEn}")
+                val existingDeck = repository.getBookmarkedWordsList().map { it.word.trim().lowercase() }.toSet()
+                val toAdd = CourseProgressCalculator.selectNextAutoFeedWords(topicWords, existingDeck, batchSize)
+                val added = if (toAdd.isNotEmpty()) repository.addCurriculumWordsToDeck(toAdd, extraTags) else 0
+                startUnifiedStudySession(
+                    deckFilter = "Topic: ${topic.nameEn}",
+                    deckTitle = topic.nameEn,
+                    extraNewBonus = maxOf(added, batchSize)
+                )
+            } finally {
+                _isAddingCourseWords.value = false
+            }
+        }
+    }
+
+    /**
+     * Deep-links straight into a specific offline Book & Unit (e.g. from Dictionary "Found in Curriculum" chips).
+     */
+    fun openCourseBookAndUnit(bookNum: Int, unitNum: Int) {
+        viewModelScope.launch {
+            val books = _offlineBooks.value.ifEmpty {
+                repository.getOfflineBooks().also { _offlineBooks.value = it }
+            }
+            val book = books.firstOrNull { it.bookNum == bookNum } ?: return@launch
+            _selectedCourseTopic.value = null
+            _selectedCourseBook.value = book
+            val units = repository.getOfflineUnitsForBook(bookNum)
+            _courseUnits.value = units
+            _unitWordLowersMap.value = repository.getOfflineUnitWordLowersMap(bookNum)
+            val unit = units.firstOrNull { it.unitNum == unitNum }
+            _selectedCourseUnit.value = unit
+            _courseWords.value = if (unit != null) {
+                repository.getOfflineWordsForUnit(bookNum, unitNum)
+            } else {
+                emptyList()
+            }
+        }
+    }
+
     private fun computeUpdatedFsrsOrSm2Card(word: WordEntity, rating: String, today: Long): WordEntity {
         val eBonus = _easyBonus.value
         val sEase = _startingEase.value
@@ -2282,7 +2363,8 @@ class DictionaryViewModel(
     fun speakWithAiVoice(text: String, cacheWordKey: String = text) {
         val clean = text.trim()
         if (clean.isEmpty()) return
-        viewModelScope.launch {
+        activeSpeakJob?.cancel()
+        activeSpeakJob = viewModelScope.launch {
             val geminiKeys = _geminiApiKeys.value.map { it.trim() }.filter { !isInvalidApiKey(it) }
             if (geminiKeys.isEmpty()) {
                 _snackbarMessage.tryEmit("Add a Gemini API key in Settings for AI Voice — playing Natural Offline voice instead.")
@@ -2321,7 +2403,7 @@ class DictionaryViewModel(
             val chosenUrl = selectAudioUrl(urls, preferUk) ?: return@withContext null
             val req = Request.Builder()
                 .url(chosenUrl)
-                .header("User-Agent", "RedeusDictionary/1.3")
+                .header("User-Agent", "Sada/1.4")
                 .get()
                 .build()
             ttsHttpClient.newCall(req).execute().use { resp ->
@@ -3280,6 +3362,16 @@ class DictionaryViewModel(
         }
     }
 
+    private fun currentTtsSignature(): String =
+        "${_selectedAccent.value}|${_selectedTtsVoiceName.value}|${_speechSpeed.value}"
+
+    private fun ensureTtsSettingsApplied() {
+        val sig = currentTtsSignature()
+        if (lastAppliedTtsSignature != sig) {
+            updateTtsSettings()
+        }
+    }
+
     fun updateTtsSettings() {
         val engine = tts ?: return
         if (!isTtsReady) return
@@ -3328,22 +3420,37 @@ class DictionaryViewModel(
             _activeOfflineVoiceLabel.value = "System $accent English"
         }
 
-        val rate = if (_speechSpeed.value == "Slow") 0.72f else 0.96f
-        engine.setSpeechRate(rate)
+        // Exact 1.0f native rate + 1.0f pitch avoids Android WSOLA time-stretching DSP metallic echo
+        val rate = if (_speechSpeed.value == "Slow") 0.78f else 1.0f
+        try {
+            engine.setPitch(1.0f)
+            engine.setSpeechRate(rate)
+        } catch (_: Exception) {}
+        lastAppliedTtsSignature = currentTtsSignature()
     }
 
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             isTtsReady = true
+            try {
+                tts?.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+            } catch (_: Exception) {}
+            lastAppliedTtsSignature = ""
             updateTtsSettings()
         }
     }
 
     private fun speakWithTts(word: String) {
+        stopAndReleasePlayer()
         setLastPronunciationSource("Device TTS")
         if (isTtsReady) {
-            updateTtsSettings()
-            tts?.speak(word, TextToSpeech.QUEUE_FLUSH, null, null)
+            ensureTtsSettingsApplied()
+            tts?.speak(word, TextToSpeech.QUEUE_FLUSH, null, "sada_word_${System.currentTimeMillis()}")
         }
     }
 
@@ -3888,6 +3995,17 @@ class DictionaryViewModel(
         currentTempAudioFile = null
     }
 
+    fun stopAllAudioPlayback() {
+        activeSpeakJob?.cancel()
+        activeSpeakJob = null
+        stopAndReleasePlayer()
+        try {
+            if (isTtsReady) {
+                tts?.stop()
+            }
+        } catch (_: Exception) {}
+    }
+
     fun getPronunciationAudioFile(word: String): File {
         val cleanWord = word.trim().lowercase(Locale.ROOT)
         val sanitized = cleanWord.replace(Regex("[^a-z0-9_-]"), "_")
@@ -4139,7 +4257,15 @@ class DictionaryViewModel(
         val cleanWord = word.trim()
         if (cleanWord.isEmpty()) return
 
-        viewModelScope.launch {
+        val now = System.currentTimeMillis()
+        if (cleanWord.equals(lastSpeakRequestText, ignoreCase = true) && now - lastSpeakRequestAtMs < 260L) {
+            return
+        }
+        lastSpeakRequestText = cleanWord
+        lastSpeakRequestAtMs = now
+
+        activeSpeakJob?.cancel()
+        activeSpeakJob = viewModelScope.launch {
             // First look up the word in the database
             val localWord = repository.getLocalWord(cleanWord)
             val savedPath = localWord?.audioPath
@@ -4840,7 +4966,9 @@ class DictionaryViewModel(
         _reminderHour.value = com.example.reminder.ReminderHelper.getReminderHour(application)
         _reminderMinute.value = com.example.reminder.ReminderHelper.getReminderMinute(application)
         
-        _selectedThemeColor.value = sharedPrefs.getString("selected_theme_color", "indigo") ?: "indigo"
+        val savedTheme = sharedPrefs.getString("selected_theme_color", null)
+        _selectedThemeColor.value = if (savedTheme.isNullOrBlank() || savedTheme == "indigo") "sada_teal" else savedTheme
+        _selectedAppIcon.value = sharedPrefs.getString("selected_app_icon", SadaAppIcon.SONIC_FLIP.id) ?: SadaAppIcon.SONIC_FLIP.id
         _themeMode.value = sharedPrefs.getString("theme_mode", "system") ?: "system"
         _dynamicColorEnabled.value = sharedPrefs.getBoolean("dynamic_color_enabled", false)
         _arabicTranslationEnabled.value = sharedPrefs.getBoolean("arabic_translation_enabled", true)

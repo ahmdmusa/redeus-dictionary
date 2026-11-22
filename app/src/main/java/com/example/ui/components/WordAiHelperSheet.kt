@@ -120,6 +120,9 @@ fun WordLocalImageBanner(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val photosEnabled by viewModel.aiVisualizationsEnabled.collectAsStateWithLifecycle()
+    if (!photosEnabled) return
+
     val imageLoader = rememberAppImageLoader(context)
     val refreshVersion by viewModel.localImageRefreshVersion.collectAsStateWithLifecycle()
     val cyclingWord by viewModel.cyclingPhotoWord.collectAsStateWithLifecycle()
@@ -311,13 +314,13 @@ fun WordAiHelperSheet(
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = null,
-                            tint = Color(0xFFBF5AF2),
+                            tint = MaterialTheme.colorScheme.tertiary,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             text = "Word AI Assistant",
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            color = Color(0xFFBF5AF2)
+                            color = MaterialTheme.colorScheme.tertiary
                         )
                     }
                     Text(
@@ -455,8 +458,8 @@ fun WordAiHelperSheet(
                 interactionSource = aiInteraction,
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF5E5CE6),
-                    contentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -465,7 +468,11 @@ fun WordAiHelperSheet(
                     .testTag("ai_helper_enrich_button")
             ) {
                 if (isEnriching) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.White)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onTertiary
+                    )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text("Fetching & saving offline...")
                 } else {
@@ -512,7 +519,7 @@ fun WordAiHelperSheet(
                 AppleInsetDivider(startIndent = 58.dp)
                 HelperActionRow(
                     icon = Icons.Default.GraphicEq,
-                    tint = Color(0xFFBF5AF2),
+                    tint = MaterialTheme.colorScheme.tertiary,
                     title = "Play with AI Voice (Gemini TTS)",
                     subtitle = "Saves locally after playing · Last: $lastAudioSource",
                     onClick = {

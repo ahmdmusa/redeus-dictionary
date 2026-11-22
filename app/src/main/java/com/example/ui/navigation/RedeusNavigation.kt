@@ -5,6 +5,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.outlined.LibraryBooks
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -65,8 +67,8 @@ enum class RedeusDestination(
         label = "Courses",
         pageTitle = "Courses",
         contentDescription = "Offline Books & IELTS",
-        selectedIcon = Icons.Filled.LibraryBooks,
-        unselectedIcon = Icons.Outlined.LibraryBooks
+        selectedIcon = Icons.AutoMirrored.Filled.LibraryBooks,
+        unselectedIcon = Icons.AutoMirrored.Outlined.LibraryBooks
     ),
     DICTIONARY(
         index = 3,
@@ -102,9 +104,9 @@ fun RedeusAppShell(
     val destinations = RedeusDestination.entries
     val currentDest = destinations.getOrElse(selectedTab) { RedeusDestination.TODAY }
     val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
-    val hairlineColor = if (isDark) Color.White.copy(alpha = 0.09f) else Color.Black.copy(alpha = 0.08f)
-    val tabBarBackground = if (isDark) Color(0xFF121214) else Color(0xFFF9F9FB)
-    val inactiveTabColor = Color(0xFF8E8E93)
+    val hairlineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (isDark) 0.55f else 0.7f)
+    val tabBarBackground = MaterialTheme.colorScheme.surfaceContainerLow
+    val inactiveTabColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -227,7 +229,7 @@ fun RedeusAppShell(
                                             color = itemColor,
                                             maxLines = 1,
                                             softWrap = false,
-                                            overflow = TextOverflow.Visible
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
@@ -305,9 +307,9 @@ fun RedeusAppShell(
             Snackbar(
                 snackbarData = data,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
-                containerColor = if (isDark) Color(0xFF2C2C2E) else Color(0xFF1C1C1E),
-                contentColor = Color.White,
-                actionColor = Color(0xFF0A84FF)
+                containerColor = MaterialTheme.colorScheme.inverseSurface,
+                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                actionColor = MaterialTheme.colorScheme.inversePrimary
             )
         }
     }
@@ -325,8 +327,8 @@ private fun DestinationIconWithBadge(
         BadgedBox(
             badge = {
                 Badge(
-                    containerColor = Color(0xFFFF3B30),
-                    contentColor = Color.White,
+                    containerColor = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary,
                     modifier = Modifier.semantics {
                         contentDescription = "$cardsDueTodayCount cards ready to study today"
                     }

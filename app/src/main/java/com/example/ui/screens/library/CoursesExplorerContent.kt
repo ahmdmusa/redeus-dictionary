@@ -1,5 +1,6 @@
 package com.example.ui.screens.library
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +15,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -83,6 +86,15 @@ fun CoursesExplorerContent(
     var catalogFilter by rememberSaveable { mutableStateOf(CourseCatalogFilter.ALL) }
     var aiHelperWordKey by remember { mutableStateOf<String?>(null) }
     var aiHelperFallbackEntity by remember { mutableStateOf<WordEntity?>(null) }
+
+    // System Back pops Words -> Units -> Books cleanly instead of exiting the app
+    BackHandler(enabled = selectedTopic != null || selectedUnit != null || selectedBook != null) {
+        when {
+            selectedTopic != null -> viewModel.selectCourseTopic(null)
+            selectedUnit != null -> viewModel.selectCourseUnit(null)
+            selectedBook != null -> viewModel.selectCourseBook(null)
+        }
+    }
 
     val deckWordMap = remember(bookmarkedWords) {
         bookmarkedWords.associateBy { it.word.trim().lowercase() }
@@ -180,20 +192,7 @@ fun CoursesExplorerContent(
                     onBack = { viewModel.selectCourseTopic(null) },
                     onStudyUnitNow = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        val existing = deckWordMap.keys
-                        val needed = CourseProgressCalculator.selectNextAutoFeedWords(
-                            orderedUnitWords = courseWords,
-                            existingDeckWordsLower = existing,
-                            batchSize = newCardsPerDay
-                        )
-                        if (needed.isNotEmpty()) {
-                            viewModel.addNextBatchToDeck(courseWords, newCardsPerDay, extraTags, topic.nameEn)
-                        }
-                        viewModel.startUnifiedStudySession(
-                            deckFilter = "Topic: ${topic.nameEn}",
-                            deckTitle = topic.nameEn,
-                            extraNewBonus = newCardsPerDay
-                        )
+                        viewModel.studyTopicNow(topic = topic, topicWords = courseWords)
                     },
                     onAddBatch = { batchSize ->
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -356,7 +355,7 @@ fun CoursesExplorerContent(
                                         fontSize = 13.sp,
                                         fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
                                     ),
-                                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
                                 )
                             }
@@ -627,7 +626,7 @@ private fun ActiveCourseHeroBanner(
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Study Unit ${summary.currentUnitNum} (+$newCardsPerDay)",
+                            text = "Study Unit ${summary.currentUnitNum}",
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -704,8 +703,8 @@ private fun BookCoverGridCard(
     val icon = when (book.bookNum) {
         7 -> Icons.Default.WorkspacePremium
         8 -> Icons.Default.Headphones
-        9 -> Icons.Default.LibraryBooks
-        else -> Icons.Default.MenuBook
+        9 -> Icons.AutoMirrored.Filled.LibraryBooks
+        else -> Icons.AutoMirrored.Filled.MenuBook
     }
     val progress = if (book.wordCount > 0) (inDeckCount.toFloat() / book.wordCount.toFloat()).coerceIn(0f, 1f) else 0f
     val pct = (progress * 100f).toInt()
@@ -1435,32 +1434,35 @@ private fun CurriculumWordInsetRow(
     onAiHelper: () -> Unit,
     onToggleDeck: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp)
+            .padding(start = 16.dp, end = 6.dp, top = 10.dp, bottom = 12.dp)
             .testTag("course_word_row_${item.word.lowercase()}"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
+        // Row 1: Headword + metadata + 48dp Speak & Bookmark buttons
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     text = item.word.replaceFirstChar { it.uppercase() },
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 16.sp,
+                        fontSize = 16.5.sp,
                         fontWeight = FontWeight.SemiBold
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 if (item.pos.isNotBlank()) {
                     Text(
@@ -1485,72 +1487,101 @@ private fun CurriculumWordInsetRow(
                     )
                 }
             }
-            if (item.translationAr.isNotBlank()) {
-                Text(
-                    text = item.translationAr,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Medium,
-                        textDirection = TextDirection.Rtl
-                    ),
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+
+            // 48dp Pronounce button
+            IconButton(
+                onClick = onSpeak,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("course_word_speak_${item.word.lowercase()}")
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = "Pronounce ${item.word}",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
                 )
             }
-            if (item.definitionEn.isNotBlank()) {
-                Text(
-                    text = item.definitionEn,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+
+            // 48dp Bookmark / Add to Deck toggle
+            IconButton(
+                onClick = onToggleDeck,
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("course_word_bookmark_${item.word.lowercase()}")
+            ) {
+                Icon(
+                    imageVector = if (inDeck) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                    contentDescription = if (inDeck) "Remove from Deck" else "Add to FSRS Deck",
+                    tint = if (inDeck) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(21.dp)
                 )
             }
         }
 
-        // 48dp Pronounce button
-        IconButton(
-            onClick = onSpeak,
+        // Row 2: Full-width Arabic meaning + English definition + compact AI Helper pill
+        Row(
             modifier = Modifier
-                .size(48.dp)
-                .testTag("course_word_speak_${item.word.lowercase()}")
+                .fillMaxWidth()
+                .padding(end = 10.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                contentDescription = "Pronounce ${item.word}",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-        }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                if (item.translationAr.isNotBlank()) {
+                    Text(
+                        text = item.translationAr,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Medium,
+                            textDirection = TextDirection.Rtl
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (item.definitionEn.isNotBlank()) {
+                    Text(
+                        text = item.definitionEn,
+                        style = MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
 
-        // 48dp Per-Word AI Helper button
-        IconButton(
-            onClick = onAiHelper,
-            modifier = Modifier
-                .size(48.dp)
-                .testTag("course_word_ai_helper_${item.word.lowercase()}")
-        ) {
-            Icon(
-                imageVector = Icons.Default.AutoAwesome,
-                contentDescription = "AI Helper for ${item.word}",
-                tint = MaterialTheme.colorScheme.tertiary,
-                modifier = Modifier.size(19.dp)
-            )
-        }
-
-        // 48dp Bookmark / Add to Deck toggle
-        IconButton(
-            onClick = onToggleDeck,
-            modifier = Modifier
-                .size(48.dp)
-                .testTag("course_word_bookmark_${item.word.lowercase()}")
-        ) {
-            Icon(
-                imageVector = if (inDeck) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                contentDescription = if (inDeck) "Remove from Deck" else "Add to FSRS Deck",
-                tint = if (inDeck) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.size(21.dp)
-            )
+            Surface(
+                onClick = onAiHelper,
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.12f),
+                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.30f)),
+                modifier = Modifier
+                    .heightIn(min = 36.dp)
+                    .testTag("course_word_ai_helper_${item.word.lowercase()}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = "AI Helper for ${item.word}",
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = "AI",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
         }
     }
 }

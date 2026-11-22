@@ -196,4 +196,69 @@ class StudyEngineAndSearchUnitTest {
         val sentenceOrder = PronunciationPriority.resolveSentencePlaybackOrder(isNaturalOfflineTtsReady = true)
         assertEquals(PronunciationStep.NATURAL_OFFLINE_TTS, sentenceOrder.first())
     }
+
+    @Test
+    fun `SadaAppIcon exposes all 4 distinct launcher aliases with Sonic Flip as default`() {
+        val icons = com.example.ui.SadaAppIcon.entries
+        assertEquals(4, icons.size)
+        assertEquals(com.example.ui.SadaAppIcon.SONIC_FLIP, com.example.ui.SadaAppIcon.fromId(null))
+        assertEquals(com.example.ui.SadaAppIcon.SONIC_FLIP, com.example.ui.SadaAppIcon.fromId("unknown_id"))
+        assertEquals(com.example.ui.SadaAppIcon.ECHO_DECK, com.example.ui.SadaAppIcon.fromId("echo_deck"))
+        assertEquals(com.example.ui.SadaAppIcon.RESONANCE, com.example.ui.SadaAppIcon.fromId("resonance"))
+        assertEquals(com.example.ui.SadaAppIcon.WAVE_S, com.example.ui.SadaAppIcon.fromId("wave_s"))
+        assertEquals(4, icons.map { it.aliasClassName }.toSet().size)
+        assertEquals(4, icons.map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun `SadaBrandThemePresets provide all 8 curated palettes with Sada Teal + Coral default`() {
+        val presets = com.example.ui.theme.SadaBrandThemePresets
+        assertEquals(8, presets.size)
+        assertEquals("sada_teal", presets.first().id)
+
+        val defaultLight = com.example.ui.theme.getDynamicColorScheme("sada_teal", darkTheme = false)
+        val defaultDark = com.example.ui.theme.getDynamicColorScheme("sada_teal", darkTheme = true)
+        assertEquals(com.example.ui.theme.SadaTealLightColorScheme.primary, defaultLight.primary)
+        assertEquals(com.example.ui.theme.SadaTealDarkColorScheme.primary, defaultDark.primary)
+        // Dark mode onPrimary must be dark (not white) on bright pastel teal primary
+        assertTrue(defaultDark.onPrimary.red < 0.25f)
+
+        // Every single preset resolves cleanly in both light and dark modes
+        presets.forEach { preset ->
+            val light = com.example.ui.theme.getDynamicColorScheme(preset.id, darkTheme = false)
+            val dark = com.example.ui.theme.getDynamicColorScheme(preset.id, darkTheme = true)
+            assertTrue("Preset ${preset.id} light primary != background", light.primary != light.background)
+            assertTrue("Preset ${preset.id} dark primary != background", dark.primary != dark.background)
+        }
+    }
+
+    @Test
+    fun `TtsVoiceSelector penalizes robotic echoey synthesizers far below offline Google Neural voices`() {
+        val googleNeuralScore = com.example.ui.TtsVoiceSelector.scoreVoiceForAccent(
+            name = "en-gb-x-gba-local",
+            localeLanguage = "en",
+            localeCountry = "GB",
+            isNetworkRequired = false,
+            quality = 400,
+            targetAccent = "UK"
+        )
+        val espeakScore = com.example.ui.TtsVoiceSelector.scoreVoiceForAccent(
+            name = "en-gb-espeak-local",
+            localeLanguage = "en",
+            localeCountry = "GB",
+            isNetworkRequired = false,
+            quality = 400,
+            targetAccent = "UK"
+        )
+        val picoScore = com.example.ui.TtsVoiceSelector.scoreVoiceForAccent(
+            name = "en-gb-pico-compact",
+            localeLanguage = "en",
+            localeCountry = "GB",
+            isNetworkRequired = false,
+            quality = 300,
+            targetAccent = "UK"
+        )
+        assertTrue("Google Neural ($googleNeuralScore) must outrank eSpeak ($espeakScore) by >= 800", googleNeuralScore - espeakScore >= 800)
+        assertTrue("Google Neural ($googleNeuralScore) must outrank Pico ($picoScore) by >= 800", googleNeuralScore - picoScore >= 800)
+    }
 }

@@ -52,6 +52,7 @@ fun StudyHubScreen(
     bookmarkedWords: List<WordEntity>,
     innerPadding: PaddingValues,
     initialSubMode: StudySubMode = StudySubMode.HUB,
+    onSubModeExited: () -> Unit = {},
     onNavigateToCourses: () -> Unit
 ) {
     var subMode by rememberSaveable(initialSubMode) { mutableStateOf(initialSubMode) }
@@ -63,6 +64,11 @@ fun StudyHubScreen(
     val haptics = LocalHapticFeedback.current
     val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
     val borderCol = if (isDark) Color.White.copy(alpha = 0.09f) else Color.Black.copy(alpha = 0.07f)
+
+    androidx.activity.compose.BackHandler(enabled = subMode != StudySubMode.HUB) {
+        subMode = StudySubMode.HUB
+        onSubModeExited()
+    }
 
     if (subMode != StudySubMode.HUB) {
         Column(
@@ -79,7 +85,10 @@ fun StudyHubScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 IconButton(
-                    onClick = { subMode = StudySubMode.HUB },
+                    onClick = {
+                        subMode = StudySubMode.HUB
+                        onSubModeExited()
+                    },
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to Study Hub")
@@ -203,7 +212,7 @@ fun StudyHubScreen(
                                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                                         fontFeatureSettings = "tnum"
                                     ),
-                                    color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -260,7 +269,7 @@ fun StudyHubScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            StudyCountColumn(value = deckSummary.newCount, label = "New", color = Color(0xFF0A84FF))
+                            StudyCountColumn(value = deckSummary.newCount, label = "New", color = MaterialTheme.colorScheme.primary)
                             StudyCountColumn(value = deckSummary.learningCount, label = "Learning", color = Color(0xFFFF9F0A))
                             StudyCountColumn(value = deckSummary.reviewCount, label = "Review", color = Color(0xFF30D158))
                         }
@@ -274,12 +283,14 @@ fun StudyHubScreen(
                                         deckFilter = selectedDeck,
                                         deckTitle = if (selectedDeck.equals("ALL", true)) "Today's Session" else selectedDeck
                                     )
-                                } else {
+                                } else if (deckSummary.totalNewRemainingInDeck > 0) {
                                     viewModel.startUnifiedStudySession(
                                         deckFilter = selectedDeck,
                                         deckTitle = "Study Ahead",
                                         extraNewBonus = 5
                                     )
+                                } else {
+                                    viewModel.autoFeedActiveCourseWords(count = 5, launchSession = true)
                                 }
                             },
                             interactionSource = startInteraction,
@@ -293,13 +304,13 @@ fun StudyHubScreen(
                             Icon(Icons.Default.PlayArrow, contentDescription = null)
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (deckSummary.totalToday > 0) {
-                                    "Start Study Session (${deckSummary.totalToday} Cards)"
-                                } else {
-                                    "Study Ahead (+5 New Cards)"
+                                text = when {
+                                    deckSummary.totalToday > 0 -> "Start Study Session (${deckSummary.totalToday} Cards)"
+                                    deckSummary.totalNewRemainingInDeck > 0 -> "Study Ahead (+5 New Cards)"
+                                    else -> "Load +5 Words from Course"
                                 },
                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = Color.White
+                                maxLines = 1
                             )
                         }
 

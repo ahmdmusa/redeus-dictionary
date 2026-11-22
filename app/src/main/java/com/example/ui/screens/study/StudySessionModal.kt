@@ -402,8 +402,7 @@ fun StudySessionModal(
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.SemiBold
-                            ),
-                            color = Color.White
+                            )
                         )
                     }
                 } else {
@@ -415,14 +414,14 @@ fun StudySessionModal(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        val againAccent = if (isDark) Color(0xFFFF453A) else Color(0xFFD70015)
+                        val againAccent = if (isDark) Color(0xFFFF5A5F) else Color(0xFFD70015)
                         val hardAccent = if (isDark) Color(0xFFFF9F0A) else Color(0xFFC95100)
-                        val goodAccent = if (isDark) Color(0xFF30D158) else Color(0xFF1B8A3A)
-                        val easyAccent = if (isDark) Color(0xFF0A84FF) else Color(0xFF007AFF)
+                        val goodAccent = if (isDark) Color(0xFF34D399) else Color(0xFF15803D)
+                        val easyAccent = MaterialTheme.colorScheme.primary
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             SessionRatingButton(
@@ -701,8 +700,7 @@ fun SessionSummaryScreen(
             ) {
                 Text(
                     text = "Back to Today",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = Color.White
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                 )
             }
 

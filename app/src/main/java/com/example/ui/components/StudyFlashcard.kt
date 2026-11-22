@@ -198,13 +198,19 @@ fun StudyFlashcard(
                     cameraDistance = 14f * density
                 }
                 .clip(RoundedCornerShape(26.dp))
-                .clickable(
-                    interactionSource = cardInteraction,
-                    indication = null
-                ) {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onToggleFlip()
-                }
+                .then(
+                    if (!flipped) {
+                        Modifier.clickable(
+                            interactionSource = cardInteraction,
+                            indication = null
+                        ) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onToggleFlip()
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
                 .testTag("study_flashcard_surface"),
             contentAlignment = Alignment.Center
         ) {
@@ -229,6 +235,10 @@ fun StudyFlashcard(
                     cardBorderColor = cardBorderColor,
                     reducedMotion = reducedMotion,
                     viewModel = viewModel,
+                    onFlipBack = {
+                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onToggleFlip()
+                    },
                     onOpenAiHelper = onOpenAiHelper
                 )
             }
@@ -276,89 +286,73 @@ private fun StudyCardFrontFace(
         border = BorderStroke(0.5.dp, cardBorderColor),
         tonalElevation = 0.dp
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Top badges + 48dp Info button
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Top badges + 48dp Info button (non-overlapping dedicated header)
             Row(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp),
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 8.dp, top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.End
             ) {
-                if (card.isLeech) {
-                    LeechBadge(lapses = card.lapses)
-                }
-                CardStatusBadge(wordEntity = card)
-                IconButton(
-                    onClick = onOpenCardInfo,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag("active_review_card_info_button")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Card review history",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    if (card.isLeech) {
+                        LeechBadge(lapses = card.lapses)
+                    }
+                    CardStatusBadge(wordEntity = card)
+                    IconButton(
+                        onClick = onOpenCardInfo,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .testTag("active_review_card_info_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Card review history",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 
-            Column(
+            // Centered scrollable middle face
+            Box(
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 28.dp, vertical = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
             ) {
-                if (recallMode == StudyRecallMode.REVERSE && arabicMeaning.isNotBlank()) {
-                    Text(
-                        text = "What is the English word?",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = arabicMeaning,
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Bold,
-                            lineHeight = 44.sp,
-                            textDirection = TextDirection.Rtl
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center
-                    )
-                    val posAbbr = formatPartOfSpeechAbbreviation(card.partOfSpeech)
-                    if (posAbbr.isNotBlank()) {
+                Column(
+                    modifier = Modifier
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (recallMode == StudyRecallMode.REVERSE && arabicMeaning.isNotBlank()) {
                         Text(
-                            text = posAbbr,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
+                            text = "What is the English word?",
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                } else {
-                    Text(
-                        text = card.word.replaceFirstChar { it.uppercase() },
-                        style = RedeusExpressiveType.headword.copy(
-                            fontSize = 36.sp,
-                            letterSpacing = (-0.5).sp,
-                            textDirection = TextDirection.Ltr
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (displayPhonetic.isNotBlank()) {
-                            Text(
-                                text = displayPhonetic,
-                                style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Ltr),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        Text(
+                            text = arabicMeaning,
+                            style = MaterialTheme.typography.headlineLarge.copy(
+                                fontSize = 30.sp,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 42.sp,
+                                textDirection = TextDirection.Rtl
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center
+                        )
                         val posAbbr = formatPartOfSpeechAbbreviation(card.partOfSpeech)
                         if (posAbbr.isNotBlank()) {
                             Text(
@@ -367,46 +361,76 @@ private fun StudyCardFrontFace(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    val speakInteraction = remember { MutableInteractionSource() }
-                    Surface(
-                        onClick = onSpeak,
-                        interactionSource = speakInteraction,
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                        contentColor = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .size(56.dp)
-                            .applePressScale(speakInteraction, 0.92f)
-                            .testTag("speak_review_button")
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                contentDescription = "Pronounce word",
-                                modifier = Modifier.size(26.dp)
-                            )
+                    } else {
+                        Text(
+                            text = card.word.replaceFirstChar { it.uppercase() },
+                            style = RedeusExpressiveType.headword.copy(
+                                fontSize = 34.sp,
+                                letterSpacing = (-0.5).sp,
+                                textDirection = TextDirection.Ltr
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            textAlign = TextAlign.Center
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (displayPhonetic.isNotBlank()) {
+                                Text(
+                                    text = displayPhonetic,
+                                    style = MaterialTheme.typography.bodyLarge.copy(textDirection = TextDirection.Ltr),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            val posAbbr = formatPartOfSpeechAbbreviation(card.partOfSpeech)
+                            if (posAbbr.isNotBlank()) {
+                                Text(
+                                    text = posAbbr,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-                    }
 
-                    Text(
-                        text = "Natural Offline ($selectedAccent)",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
-                    )
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        val speakInteraction = remember { MutableInteractionSource() }
+                        Surface(
+                            onClick = onSpeak,
+                            interactionSource = speakInteraction,
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                            contentColor = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(56.dp)
+                                .applePressScale(speakInteraction, 0.92f)
+                                .testTag("speak_review_button")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                    contentDescription = "Pronounce word",
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Natural Offline ($selectedAccent)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        )
+                    }
                 }
             }
 
+            // Dedicated non-overlapping bottom hint
             Text(
                 text = "Tap card to reveal answer",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.70f),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 18.dp)
+                modifier = Modifier.padding(bottom = 16.dp, top = 4.dp)
             )
         }
     }
@@ -422,6 +446,7 @@ private fun StudyCardBackFace(
     cardBorderColor: Color,
     reducedMotion: Boolean,
     viewModel: DictionaryViewModel,
+    onFlipBack: () -> Unit,
     onOpenAiHelper: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
@@ -442,10 +467,42 @@ private fun StudyCardBackFace(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 18.dp),
+                .padding(horizontal = 20.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            // Subtle top utility strip so users can flip back cleanly without conflicting with vertical scroll
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    onClick = onFlipBack,
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.heightIn(min = 34.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Flip,
+                            contentDescription = "Flip to front",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = "Front",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             // 1. Local Permanent Word Photo (Bundled 3,586 WebP or User-Saved Offline Asset)
             WordLocalImageBanner(
                 wordEntity = card,
@@ -670,8 +727,8 @@ private fun StudyCardBackFace(
                 },
                 interactionSource = helperInteraction,
                 shape = RoundedCornerShape(14.dp),
-                color = Color(0xFF5E5CE6).copy(alpha = 0.16f),
-                border = BorderStroke(0.75.dp, Color(0xFF5E5CE6).copy(alpha = 0.40f)),
+                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f),
+                border = BorderStroke(0.75.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.38f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
@@ -686,7 +743,7 @@ private fun StudyCardBackFace(
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
                         contentDescription = null,
-                        tint = Color(0xFFBF5AF2),
+                        tint = MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))

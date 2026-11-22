@@ -78,6 +78,7 @@ fun SearchTabContent(
     innerPadding: PaddingValues,
     onOpenApiSettings: () -> Unit = {},
     onOpenCourses: () -> Unit = {},
+    onOpenCourseOccurrence: (bookNum: Int, unitNum: Int) -> Unit = { _, _ -> onOpenCourses() },
     onOpenReview: () -> Unit = {}
 ) {
     var scope by rememberSaveable { mutableStateOf(DictionaryScope.ALL) }
@@ -230,6 +231,7 @@ fun SearchTabContent(
                                 viewModel = viewModel,
                                 curriculumOccurrences = occurrences,
                                 onOpenCourses = onOpenCourses,
+                                onOpenCourseOccurrence = onOpenCourseOccurrence,
                                 onSelectRelatedWord = { related -> viewModel.openWordFromSearch(related, pushToBackStack = true) }
                             )
                         }
@@ -290,7 +292,7 @@ fun SearchTabContent(
                                     fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
                                     fontFeatureSettings = "tnum"
                                 ),
-                                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -471,7 +473,7 @@ private fun StickyDictionarySearchBar(
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.primary,
-                        contentColor = Color.White,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier.size(34.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -574,7 +576,7 @@ private fun DictionaryLandingBody(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -583,7 +585,9 @@ private fun DictionaryLandingBody(
                                     fontWeight = FontWeight.Bold,
                                     textDirection = TextDirection.Ltr
                                 ),
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             if (wordOfTheDay.translationAr.isNotBlank()) {
                                 Text(
@@ -592,7 +596,9 @@ private fun DictionaryLandingBody(
                                         fontWeight = FontWeight.SemiBold,
                                         textDirection = TextDirection.Rtl
                                     ),
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -609,9 +615,10 @@ private fun DictionaryLandingBody(
                         FilledTonalButton(
                             onClick = { onToggleDeck(wordOfTheDay.word, wordOfTheDay.translationAr) },
                             shape = RoundedCornerShape(14.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp),
                             modifier = Modifier.height(48.dp)
                         ) {
-                            Text(if (inDeck) "In Deck ✓" else "+ Study")
+                            Text(if (inDeck) "In Deck ✓" else "+ Study", maxLines = 1)
                         }
                     }
                     Text(
@@ -659,7 +666,7 @@ private fun DictionaryLandingBody(
                         Text(
                             text = level,
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.primary
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -917,7 +924,8 @@ private fun QuickDictionaryRow(
                     ),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 if (badge.isNotBlank()) {
                     Text(
@@ -1045,7 +1053,10 @@ private fun MyDeckScopeBody(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             text = w.word.replaceFirstChar { it.uppercase() },
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
                         )
                         CardStatusBadge(wordEntity = w)
                     }
@@ -1082,8 +1093,11 @@ private fun HistoryScopeBody(
 ) {
     val filtered = remember(historyWords, query) {
         val q = query.trim().lowercase()
+        val normAr = com.example.data.ArabicNormalizer.normalize(q)
         if (q.isEmpty()) historyWords else historyWords.filter {
-            it.word.lowercase().contains(q) || it.arabicMeaning.contains(q)
+            it.word.lowercase().contains(q) ||
+                it.arabicMeaning.contains(q) ||
+                (normAr.isNotEmpty() && com.example.data.ArabicNormalizer.normalize(it.arabicMeaning).contains(normAr))
         }
     }
 
@@ -1270,6 +1284,7 @@ fun WordDetailsCard(
     viewModel: DictionaryViewModel,
     curriculumOccurrences: List<OfflineCurriculumWord> = emptyList(),
     onOpenCourses: () -> Unit = {},
+    onOpenCourseOccurrence: (bookNum: Int, unitNum: Int) -> Unit = { _, _ -> onOpenCourses() },
     onSelectRelatedWord: (String) -> Unit = { viewModel.openWordFromSearch(it, pushToBackStack = true) }
 ) {
     var showCardInfoDialog by remember { mutableStateOf(false) }
@@ -1323,7 +1338,7 @@ fun WordDetailsCard(
                     Text(
                         text = wordEntity.word.replaceFirstChar { it.uppercase() },
                         style = RedeusExpressiveType.headword.copy(
-                            fontSize = 36.sp,
+                            fontSize = 34.sp,
                             textDirection = TextDirection.Ltr
                         ),
                         color = MaterialTheme.colorScheme.onSurface,
@@ -1410,7 +1425,7 @@ fun WordDetailsCard(
                     } else {
                         ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = Color.White
+                            contentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     },
                     modifier = Modifier
@@ -1427,7 +1442,8 @@ fun WordDetailsCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = if (wordEntity.isBookmarked) "In Study Deck" else "Add to Study",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        maxLines = 1
                     )
                 }
 
@@ -1439,8 +1455,8 @@ fun WordDetailsCard(
                     },
                     interactionSource = helperInteraction,
                     shape = RoundedCornerShape(14.dp),
-                    color = Color(0xFF5E5CE6),
-                    contentColor = Color.White,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    contentColor = MaterialTheme.colorScheme.onTertiary,
                     modifier = Modifier
                         .height(48.dp)
                         .applePressScale(helperInteraction, 0.96f)
@@ -1452,7 +1468,7 @@ fun WordDetailsCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("AI Helper", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
+                        Text("AI Helper", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold), maxLines = 1)
                     }
                 }
             }
@@ -1541,14 +1557,14 @@ fun WordDetailsCard(
                     ) {
                         curriculumOccurrences.distinctBy { "${it.bookNum}-${it.unitNum}" }.forEach { occ ->
                             Surface(
-                                onClick = onOpenCourses,
+                                onClick = { onOpenCourseOccurrence(occ.bookNum, occ.unitNum) },
                                 shape = RoundedCornerShape(14.dp),
-                                color = Color(0xFFFF9F0A).copy(alpha = 0.14f)
+                                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.14f)
                             ) {
                                 Text(
                                     text = "📘 ${occ.bookShortTag} · Unit ${occ.unitNum}",
                                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = Color(0xFFFF9F0A),
+                                    color = MaterialTheme.colorScheme.tertiary,
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                 )
                             }
@@ -1576,13 +1592,15 @@ fun WordDetailsCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .width(3.dp)
-                                .heightIn(min = 24.dp)
+                                .fillMaxHeight()
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(MaterialTheme.colorScheme.primary)
                         )

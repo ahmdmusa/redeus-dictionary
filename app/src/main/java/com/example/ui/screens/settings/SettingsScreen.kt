@@ -904,40 +904,167 @@ fun SettingsScreen(
 
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+                            // SADA APP ICON PICKER (All 4 selectable launcher icons; default C · Sonic Flip)
+                            val selectedAppIconId by viewModel.selectedAppIcon.collectAsStateWithLifecycle()
+                            Text(
+                                text = "App icon (Sada · صَدى)",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Choose your home screen launcher icon anytime.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                com.example.ui.SadaAppIcon.entries.forEach { iconOption ->
+                                    val isChosen = selectedAppIconId.equals(iconOption.id, ignoreCase = true)
+                                    Surface(
+                                        onClick = { viewModel.setSelectedAppIcon(iconOption) },
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = if (isChosen) {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceContainerLow
+                                        },
+                                        border = BorderStroke(
+                                            width = if (isChosen) 1.5.dp else 0.5.dp,
+                                            color = if (isChosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                        ),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("app_icon_option_${iconOption.id}")
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(RoundedCornerShape(13.dp)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                androidx.compose.foundation.Image(
+                                                    painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.ic_sada_bg_teal),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                                androidx.compose.foundation.Image(
+                                                    painter = androidx.compose.ui.res.painterResource(id = iconOption.foregroundDrawableRes),
+                                                    contentDescription = iconOption.title,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                            Text(
+                                                text = iconOption.title,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Medium
+                                                ),
+                                                color = if (isChosen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                textAlign = TextAlign.Center
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
                             Text(
                                 text = "Color palette",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Choose a preset color palette for the app.",
+                                text = "Pick any Sada brand palette or classic color theme.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            val presets = listOf("yellow", "blue", "green", "orange", "pink", "teal")
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                presets.forEach { name ->
-                                    val presetScheme = getDynamicColorScheme(name, darkTheme)
-                                    val isSelected = selectedThemeColor.equals(name, ignoreCase = true)
-                                    Surface(
-                                        onClick = { viewModel.setSelectedThemeColor(name) },
-                                        shape = CircleShape,
-                                        color = presetScheme.primary,
-                                        contentColor = presetScheme.onPrimary,
-                                        border = if (isSelected) BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface) else null,
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .semantics { contentDescription = "Theme palette $name" }
-                                            .testTag("color_theme_$name")
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                com.example.ui.theme.SadaBrandThemePresets.chunked(2).forEach { rowPresets ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            if (isSelected) {
-                                                Icon(Icons.Default.Check, contentDescription = "Selected", modifier = Modifier.size(22.dp))
+                                        rowPresets.forEach { preset ->
+                                            val isSelected = !dynamicColorEnabled &&
+                                                selectedThemeColor.equals(preset.id, ignoreCase = true)
+                                            val swatchPrimary = if (darkTheme) preset.previewPrimaryDark else preset.previewPrimaryLight
+                                            val swatchAccent = if (darkTheme) preset.previewAccentDark else preset.previewAccentLight
+                                            Surface(
+                                                onClick = { viewModel.setSelectedThemeColor(preset.id) },
+                                                shape = RoundedCornerShape(16.dp),
+                                                color = if (isSelected) {
+                                                    MaterialTheme.colorScheme.primaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                                },
+                                                border = BorderStroke(
+                                                    width = if (isSelected) 1.5.dp else 0.5.dp,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                                ),
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .heightIn(min = 56.dp)
+                                                    .semantics { contentDescription = "Theme palette ${preset.label}" }
+                                                    .testTag("color_theme_${preset.id}")
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                ) {
+                                                    Box(modifier = Modifier.size(30.dp)) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(24.dp)
+                                                                .clip(CircleShape)
+                                                                .background(swatchPrimary)
+                                                                .align(Alignment.TopStart)
+                                                        )
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(13.dp)
+                                                                .clip(CircleShape)
+                                                                .background(swatchAccent)
+                                                                .align(Alignment.BottomEnd)
+                                                        )
+                                                    }
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = preset.label,
+                                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
+                                                            ),
+                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                            maxLines = 1
+                                                        )
+                                                        Text(
+                                                            text = preset.subtitle,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            maxLines = 1
+                                                        )
+                                                    }
+                                                    if (isSelected) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Check,
+                                                            contentDescription = "Selected",
+                                                            tint = MaterialTheme.colorScheme.primary,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                }
                                             }
+                                        }
+                                        if (rowPresets.size == 1) {
+                                            Spacer(modifier = Modifier.weight(1f))
                                         }
                                     }
                                 }

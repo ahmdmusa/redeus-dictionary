@@ -94,6 +94,16 @@ object TtsVoiceSelector {
             score += 150
         }
 
+        // Penalize legacy robotic / metallic synthesizers that sound echoey or tinny
+        if (lowerName.contains("espeak") ||
+            lowerName.contains("pico") ||
+            lowerName.contains("flite") ||
+            lowerName.contains("compact") ||
+            lowerName.contains("eloquence")
+        ) {
+            score -= 600
+        }
+
         // Android TTS quality tier
         when {
             quality >= Voice.QUALITY_VERY_HIGH -> score += 140

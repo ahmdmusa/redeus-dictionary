@@ -117,7 +117,7 @@ fun ReviewTabContent(
                                 fontSize = 13.sp,
                                 fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
                             ),
-                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                         )
                     }
@@ -573,7 +573,7 @@ fun ReviewTabContent(
                             Text(
                                 text = "Show Answer",
                                 style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     } else {

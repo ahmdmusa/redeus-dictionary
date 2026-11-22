@@ -511,5 +511,47 @@ class OfflineDictionaryIntegrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun `Sada v1_4 defaults to Teal+Coral and Sonic Flip icon and supports switching themes, icons, and unit deep-links`() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        app.getSharedPreferences("vocab_ai_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+        val db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repo = WordRepository(db.wordDao(), failingGeminiService, context = app)
+            val vm = DictionaryViewModel(app, repo)
+
+            // Verify defaults: Sada Teal + Coral, Sonic Flip icon, Dynamic Color off
+            assertEquals("sada_teal", vm.selectedThemeColor.value)
+            assertEquals("sonic_flip", vm.selectedAppIcon.value)
+            assertFalse(vm.dynamicColorEnabled.value)
+
+            // Switching theme disables dynamic color so chosen palette applies immediately
+            vm.setDynamicColorEnabled(true)
+            assertTrue(vm.dynamicColorEnabled.value)
+            vm.setSelectedThemeColor("sada_ocean")
+            assertEquals("sada_ocean", vm.selectedThemeColor.value)
+            assertFalse("Picking a curated palette must disable dynamic color", vm.dynamicColorEnabled.value)
+
+            // Switching launcher icon persists cleanly
+            vm.setSelectedAppIcon(com.example.ui.SadaAppIcon.ECHO_DECK)
+            assertEquals("echo_deck", vm.selectedAppIcon.value)
+
+            // Curriculum chip deep-link opens exact book & unit
+            vm.openCourseBookAndUnit(bookNum = 7, unitNum = 3)
+            var tries = 0
+            while ((vm.selectedCourseBook.value == null || vm.selectedCourseUnit.value == null) && tries < 60) {
+                shadowOf(Looper.getMainLooper()).idle()
+                Thread.sleep(15)
+                tries++
+            }
+            assertEquals(7, vm.selectedCourseBook.value?.bookNum)
+            assertEquals(3, vm.selectedCourseUnit.value?.unitNum)
+        } finally {
+            db.close()
+        }
+    }
 }
 
