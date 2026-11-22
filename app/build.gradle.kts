@@ -56,7 +56,16 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      all { test ->
+        val roboRepoUrl = System.getProperty("robolectric.dependency.repo.url")
+          ?: "https://maven-central.storage-download.googleapis.com/maven2"
+        test.systemProperty("robolectric.dependency.repo.url", roboRepoUrl)
+      }
+    }
+  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files
