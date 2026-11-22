@@ -100,47 +100,20 @@ fun LibraryTabContent(
             .padding(innerPadding)
             .background(MaterialTheme.colorScheme.surface)
     ) {
-        // PrimaryTabRow for Deck, Courses (6 Books + IELTS), & History
-        PrimaryTabRow(
-            selectedTabIndex = safeSubTab,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.primary
+        // Apple HIG Segmented Control for Deck, Courses (6 Books + IELTS), & History
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            Tab(
-                selected = safeSubTab == 0,
-                onClick = { selectedSubTab = 0 },
-                text = {
-                    Text(
-                        text = "Deck (${bookmarkedWords.size})",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                modifier = Modifier.testTag("library_subtab_deck")
-            )
-            Tab(
-                selected = safeSubTab == 1,
-                onClick = { selectedSubTab = 1 },
-                text = {
-                    Text(
-                        text = "Courses",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                modifier = Modifier.testTag("library_subtab_courses")
-            )
-            Tab(
-                selected = safeSubTab == 2,
-                onClick = { selectedSubTab = 2 },
-                text = {
-                    Text(
-                        text = "History (${historyWords.size})",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                modifier = Modifier.testTag("library_subtab_history")
+            com.example.ui.components.AppleSegmentedControl(
+                items = listOf(
+                    "Deck (${bookmarkedWords.size})" to "library_subtab_deck",
+                    "Courses" to "library_subtab_courses",
+                    "History (${historyWords.size})" to "library_subtab_history"
+                ),
+                selectedIndex = safeSubTab,
+                onSelect = { selectedSubTab = it }
             )
         }
 

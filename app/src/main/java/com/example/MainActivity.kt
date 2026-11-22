@@ -156,6 +156,13 @@ class MainActivity : ComponentActivity() {
                                     onOpenApiSettings = {
                                         settingsInitialTab = 2
                                         showSettings = true
+                                    },
+                                    onOpenCourses = {
+                                        libraryInitialSubTab = 1
+                                        selectedTab = 1
+                                    },
+                                    onOpenReview = {
+                                        selectedTab = 4
                                     }
                                 )
                                 1 -> LibraryTabContent(

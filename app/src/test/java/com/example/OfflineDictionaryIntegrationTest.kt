@@ -278,4 +278,74 @@ class OfflineDictionaryIntegrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun `TtsVoiceSelector prefers Google Offline Neural UK local voice over network and US voices`() {
+        val ukLocalNeural = com.example.ui.TtsVoiceSelector.scoreVoiceForAccent(
+            name = "en-gb-x-gba-local",
+            localeLanguage = "en",
+            localeCountry = "GB",
+            isNetworkRequired = false,
+            quality = android.speech.tts.Voice.QUALITY_HIGH,
+            targetAccent = "UK"
+        )
+        val ukNetworkVoice = com.example.ui.TtsVoiceSelector.scoreVoiceForAccent(
+            name = "en-gb-x-gba-network",
+            localeLanguage = "en",
+            localeCountry = "GB",
+            isNetworkRequired = true,
+            quality = android.speech.tts.Voice.QUALITY_VERY_HIGH,
+            targetAccent = "UK"
+        )
+        val usLocalVoice = com.example.ui.TtsVoiceSelector.scoreVoiceForAccent(
+            name = "en-us-x-tpf-local",
+            localeLanguage = "en",
+            localeCountry = "US",
+            isNetworkRequired = false,
+            quality = android.speech.tts.Voice.QUALITY_HIGH,
+            targetAccent = "UK"
+        )
+        val arabicVoice = com.example.ui.TtsVoiceSelector.scoreVoiceForAccent(
+            name = "ar-xa-x-arz-local",
+            localeLanguage = "ar",
+            localeCountry = "EG",
+            isNetworkRequired = false,
+            quality = android.speech.tts.Voice.QUALITY_HIGH,
+            targetAccent = "UK"
+        )
+
+        assertTrue("Offline UK Neural must beat network UK voice", ukLocalNeural > ukNetworkVoice)
+        assertTrue("Offline UK Neural must beat US voice when UK accent selected", ukLocalNeural > usLocalVoice)
+        assertEquals("Non-English voices should be excluded", -1, arabicVoice)
+        assertEquals(
+            "Google UK Neural Female 1 (Offline)",
+            com.example.ui.TtsVoiceSelector.formatFriendlyVoiceName("en-gb-x-gba-local", "GB", true)
+        )
+    }
+
+    @Test
+    fun `selectedAccent defaults to UK and persists US switch across ViewModel instances`() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val db = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val repo = WordRepository(
+                wordDao = db.wordDao(),
+                apiService = failingGeminiService,
+                context = app
+            )
+            val vm1 = DictionaryViewModel(app, repo)
+            assertEquals("UK", vm1.selectedAccent.value)
+            vm1.setSelectedAccent("US")
+            assertEquals("US", vm1.selectedAccent.value)
+
+            val vm2 = DictionaryViewModel(app, repo)
+            assertEquals("US", vm2.selectedAccent.value)
+            vm2.setSelectedAccent("UK")
+        } finally {
+            db.close()
+        }
+    }
 }
+

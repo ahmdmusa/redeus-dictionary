@@ -39,6 +39,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -62,6 +63,10 @@ fun SettingsScreen(
 
     val autoPronounce by viewModel.autoPronounceEnabled.collectAsStateWithLifecycle()
     val pronunciationSource by viewModel.pronunciationSource.collectAsStateWithLifecycle()
+    val selectedAccent by viewModel.selectedAccent.collectAsStateWithLifecycle()
+    val selectedTtsVoiceName by viewModel.selectedTtsVoiceName.collectAsStateWithLifecycle()
+    val availableOfflineVoices by viewModel.availableOfflineVoices.collectAsStateWithLifecycle()
+    val activeOfflineVoiceLabel by viewModel.activeOfflineVoiceLabel.collectAsStateWithLifecycle()
     val speechSpeed by viewModel.speechSpeed.collectAsStateWithLifecycle()
     val geminiApiKeys by viewModel.geminiApiKeys.collectAsStateWithLifecycle()
     val activeKeyIndex by viewModel.activeKeyIndex.collectAsStateWithLifecycle()
@@ -134,6 +139,7 @@ fun SettingsScreen(
     var showAdvancedSrsSliders by rememberSaveable { mutableStateOf(false) }
     var showResetConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var showReminderTimePicker by rememberSaveable { mutableStateOf(false) }
+    var showVoicePickerDialog by rememberSaveable { mutableStateOf(false) }
 
     fun updatePermissionState() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -158,6 +164,7 @@ fun SettingsScreen(
             if (event == Lifecycle.Event.ON_RESUME) {
                 updatePermissionState()
                 viewModel.refreshStats()
+                viewModel.refreshAvailableTtsVoices()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -166,6 +173,114 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         viewModel.refreshStats()
+        viewModel.refreshAvailableTtsVoices()
+    }
+
+    if (showVoicePickerDialog) {
+        AlertDialog(
+            onDismissRequest = { showVoicePickerDialog = false },
+            title = { Text("Offline Neural Voice ($selectedAccent)") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        onClick = {
+                            viewModel.setSelectedTtsVoiceName("")
+                            viewModel.previewTtsVoice("Brilliant pronunciation with automatic offline neural voice.")
+                            showVoicePickerDialog = false
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (selectedTtsVoiceName.isBlank()) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerLow
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "Auto (Best Offline $selectedAccent Neural)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Automatically prefers Google Offline Neural / Sonia / HD local voices",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    if (availableOfflineVoices.isEmpty()) {
+                        Text(
+                            text = "No offline English voices detected yet. Tap \"Download UK/US Offline Voices\" to install Google Speech Services British or US offline voice packs.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    } else {
+                        availableOfflineVoices.take(24).forEach { voice ->
+                            val isChosen = selectedTtsVoiceName == voice.name
+                            Surface(
+                                onClick = {
+                                    viewModel.setSelectedTtsVoiceName(voice.name)
+                                    viewModel.previewTtsVoice("Hello! This is how your flashcards will sound offline.")
+                                    showVoicePickerDialog = false
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isChosen) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceContainerLow
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = voice.displayName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (isChosen) FontWeight.SemiBold else FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "${voice.localeTag} • ${if (voice.isLocal) "100% Offline" else "Requires Network"}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (isChosen) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Selected",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showVoicePickerDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -648,6 +763,80 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.testTag("last_pronunciation_source_text")
                                 )
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                            Text(
+                                text = "Offline Neural Accent & Voice",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Active: $activeOfflineVoiceLabel",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf("UK British" to "UK", "US American" to "US").forEach { (label, value) ->
+                                    val isSelected = selectedAccent.equals(value, ignoreCase = true)
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.setSelectedAccent(value) },
+                                        label = { Text(label) },
+                                        leadingIcon = if (isSelected) {
+                                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                        } else null,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("accent_chip_$value")
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.refreshAvailableTtsVoices()
+                                        showVoicePickerDialog = true
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("choose_offline_voice_button")
+                                ) {
+                                    Text("Choose Voice (${availableOfflineVoices.size})")
+                                }
+                                FilledTonalButton(
+                                    onClick = { viewModel.previewTtsVoice() },
+                                    modifier = Modifier.testTag("test_offline_voice_button")
+                                ) {
+                                    Text("Test")
+                                }
+                            }
+
+                            TextButton(
+                                onClick = {
+                                    try {
+                                        val installIntent = android.content.Intent(android.speech.tts.TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
+                                        context.startActivity(installIntent)
+                                    } catch (_: Exception) {
+                                        try {
+                                            val settingsIntent = android.content.Intent("com.android.settings.TTS_SETTINGS")
+                                            context.startActivity(settingsIntent)
+                                        } catch (_: Exception) {
+                                            viewModel.showSnackbar("Open Android Settings → Text-to-Speech to download Google UK/US offline voices.")
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.testTag("install_offline_tts_data_button")
+                            ) {
+                                Text("Download Google UK/US Offline Voice Packs")
                             }
 
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

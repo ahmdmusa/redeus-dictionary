@@ -7,13 +7,19 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.BookmarkBorder
@@ -25,9 +31,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontStyle
@@ -37,6 +46,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
@@ -58,7 +68,9 @@ fun SearchTabContent(
     searchQuery: String,
     uiState: SearchUiState,
     innerPadding: PaddingValues,
-    onOpenApiSettings: () -> Unit = {}
+    onOpenApiSettings: () -> Unit = {},
+    onOpenCourses: () -> Unit = {},
+    onOpenReview: () -> Unit = {}
 ) {
     val widthSizeClass = LocalWindowWidthSizeClass.current
     val isExpanded = widthSizeClass == WindowWidthSizeClass.Expanded
@@ -69,7 +81,9 @@ fun SearchTabContent(
             searchQuery = searchQuery,
             uiState = uiState,
             innerPadding = innerPadding,
-            onOpenApiSettings = onOpenApiSettings
+            onOpenApiSettings = onOpenApiSettings,
+            onOpenCourses = onOpenCourses,
+            onOpenReview = onOpenReview
         )
     } else {
         CompactMediumSearchLayout(
@@ -77,7 +91,9 @@ fun SearchTabContent(
             searchQuery = searchQuery,
             uiState = uiState,
             innerPadding = innerPadding,
-            onOpenApiSettings = onOpenApiSettings
+            onOpenApiSettings = onOpenApiSettings,
+            onOpenCourses = onOpenCourses,
+            onOpenReview = onOpenReview
         )
     }
 }
@@ -88,13 +104,12 @@ private fun CompactMediumSearchLayout(
     searchQuery: String,
     uiState: SearchUiState,
     innerPadding: PaddingValues,
-    onOpenApiSettings: () -> Unit = {}
+    onOpenApiSettings: () -> Unit = {},
+    onOpenCourses: () -> Unit = {},
+    onOpenReview: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
-    val geminiKeys by viewModel.geminiMeaningApiKeys.collectAsStateWithLifecycle()
-    val openRouterKey by viewModel.openRouterApiKey.collectAsStateWithLifecycle()
     val suggestions by viewModel.searchSuggestions.collectAsStateWithLifecycle()
-    val needsApiSetup = geminiKeys.none { it.trim().isNotBlank() } && openRouterKey.trim().isBlank()
 
     Column(
         modifier = Modifier
@@ -102,21 +117,17 @@ private fun CompactMediumSearchLayout(
             .padding(innerPadding)
             .verticalScroll(scrollState)
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 680.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            HeroBannerSection()
-            if (needsApiSetup) {
-                ApiSetupPromptCard(onOpenApiSettings = onOpenApiSettings)
-            }
-            SearchInputSection(
+            AppleSpotlightSearchSection(
                 searchQuery = searchQuery,
                 suggestions = suggestions,
                 onQueryChange = { viewModel.onSearchQueryChanged(it) },
@@ -128,7 +139,9 @@ private fun CompactMediumSearchLayout(
                 viewModel = viewModel,
                 searchQuery = searchQuery,
                 uiState = uiState,
-                onOpenApiSettings = onOpenApiSettings
+                onOpenApiSettings = onOpenApiSettings,
+                onOpenCourses = onOpenCourses,
+                onOpenReview = onOpenReview
             )
         }
     }
@@ -140,12 +153,11 @@ private fun ExpandedSearchLayout(
     searchQuery: String,
     uiState: SearchUiState,
     innerPadding: PaddingValues,
-    onOpenApiSettings: () -> Unit = {}
+    onOpenApiSettings: () -> Unit = {},
+    onOpenCourses: () -> Unit = {},
+    onOpenReview: () -> Unit = {}
 ) {
-    val geminiKeys by viewModel.geminiMeaningApiKeys.collectAsStateWithLifecycle()
-    val openRouterKey by viewModel.openRouterApiKey.collectAsStateWithLifecycle()
     val suggestions by viewModel.searchSuggestions.collectAsStateWithLifecycle()
-    val needsApiSetup = geminiKeys.none { it.trim().isNotBlank() } && openRouterKey.trim().isBlank()
 
     Row(
         modifier = Modifier
@@ -155,19 +167,14 @@ private fun ExpandedSearchLayout(
             .padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // Left Pane: Hero, Search Input, Discovery Suggestions & Notice
         Column(
             modifier = Modifier
                 .weight(0.42f)
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            HeroBannerSection()
-            if (needsApiSetup) {
-                ApiSetupPromptCard(onOpenApiSettings = onOpenApiSettings)
-            }
-            SearchInputSection(
+            AppleSpotlightSearchSection(
                 searchQuery = searchQuery,
                 suggestions = suggestions,
                 onQueryChange = { viewModel.onSearchQueryChanged(it) },
@@ -175,12 +182,14 @@ private fun ExpandedSearchLayout(
                 onSubmit = { viewModel.performSearch(searchQuery) },
                 onSelectSuggestion = { viewModel.performSearch(it.word) }
             )
-            DiscoverySuggestions { selectedWord ->
-                viewModel.performSearch(selectedWord)
-            }
+            StudyHomeDashboard(
+                viewModel = viewModel,
+                onOpenCourses = onOpenCourses,
+                onOpenReview = onOpenReview,
+                onSelectWord = { viewModel.performSearch(it) }
+            )
         }
 
-        // Right Pane: Active Result / Loading / Error / Prompt
         Column(
             modifier = Modifier
                 .weight(0.58f)
@@ -189,33 +198,28 @@ private fun ExpandedSearchLayout(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (uiState is SearchUiState.Idle) {
-                Surface(
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                AppleInsetGroupedCard {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(40.dp)
+                        AppleIconBadge(
+                            icon = Icons.Default.Search,
+                            tintColor = MaterialTheme.colorScheme.primary,
+                            size = 48.dp,
+                            iconSize = 24.dp
                         )
                         Text(
-                            text = "Look up any English or Arabic word",
+                            text = "Offline Bilingual Dictionary",
                             style = MaterialTheme.typography.titleLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center
                         )
                         Text(
-                            text = "Search offline across 6 Essential Books, 3 IELTS Books (9,591 words) and 87K Arabic definitions — or enrich any word with AI.",
+                            text = "Search in English or Arabic across 6 Essential Books, 3 IELTS Books (9,591 words), and 87K Arabic meanings.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -227,7 +231,9 @@ private fun ExpandedSearchLayout(
                     viewModel = viewModel,
                     searchQuery = searchQuery,
                     uiState = uiState,
-                    onOpenApiSettings = onOpenApiSettings
+                    onOpenApiSettings = onOpenApiSettings,
+                    onOpenCourses = onOpenCourses,
+                    onOpenReview = onOpenReview
                 )
             }
         }
@@ -235,185 +241,115 @@ private fun ExpandedSearchLayout(
 }
 
 @Composable
-private fun ApiSetupPromptCard(onOpenApiSettings: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("api_setup_prompt_card"),
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.OfflinePin,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Offline Dictionary Ready",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "9 Books (Essential + IELTS) & 87K Arabic • Add Gemini key optionally for AI",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            TextButton(
-                onClick = onOpenApiSettings,
-                modifier = Modifier.testTag("open_api_settings_button")
-            ) {
-                Text("AI Key")
-            }
-        }
-    }
-}
-
-@Composable
-private fun SearchInputSection(
+private fun AppleSpotlightSearchSection(
     searchQuery: String,
-    suggestions: List<OfflineSearchSuggestion> = emptyList(),
+    suggestions: List<OfflineSearchSuggestion>,
     onQueryChange: (String) -> Unit,
     onClear: () -> Unit,
     onSubmit: () -> Unit,
-    onSelectSuggestion: (OfflineSearchSuggestion) -> Unit = {}
+    onSelectSuggestion: (OfflineSearchSuggestion) -> Unit
 ) {
     val focusManager = LocalFocusManager.current
+    val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
+    val borderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
 
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onQueryChange,
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .testTag("search_word_input"),
-            label = { Text("Search English or Arabic") },
-            placeholder = {
-                Text(
-                    text = "e.g. aquatic, resilient, يوافق...",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
-            leadingIcon = {
+                .height(48.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = BorderStroke(0.5.dp, borderColor)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(start = 14.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Icon(
                     imageVector = Icons.Default.Search,
-                    contentDescription = "Search Icon"
+                    contentDescription = "Search",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp)
                 )
-            },
-            trailingIcon = {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart
+                ) {
+                    if (searchQuery.isEmpty()) {
+                        Text(
+                            text = "Search English or Arabic...",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    BasicTextField(
+                        value = searchQuery,
+                        onValueChange = onQueryChange,
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Search
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                onSubmit()
+                                focusManager.clearFocus()
+                            }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("search_word_input")
+                    )
+                }
+
                 if (searchQuery.isNotEmpty()) {
                     IconButton(
                         onClick = onClear,
                         modifier = Modifier
-                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .size(32.dp)
                             .testTag("clear_search_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Clear,
-                            contentDescription = "Clear search"
+                            imageVector = Icons.Default.Cancel,
+                            contentDescription = "Clear search",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
-                }
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Text,
-                imeAction = ImeAction.Search
-            ),
-            keyboardActions = KeyboardActions(
-                onSearch = {
-                    onSubmit()
-                    focusManager.clearFocus()
-                }
-            ),
-            shape = MaterialTheme.shapes.extraLarge,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
-            )
-        )
-
-        if (suggestions.isNotEmpty()) {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("offline_suggestions_card"),
-                shape = MaterialTheme.shapes.medium,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    suggestions.forEachIndexed { idx, suggestion ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    focusManager.clearFocus()
-                                    onSelectSuggestion(suggestion)
-                                }
-                                .padding(horizontal = 14.dp, vertical = 10.dp)
-                                .testTag("offline_suggestion_${suggestion.word.lowercase()}"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = suggestion.word.replaceFirstChar { it.uppercase() },
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if (suggestion.translationAr.isNotBlank()) {
-                                    Text(
-                                        text = suggestion.translationAr,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.secondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                            Surface(
-                                shape = MaterialTheme.shapes.extraSmall,
-                                color = if (suggestion.isCurriculum) {
-                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerHighest
-                                },
-                                contentColor = if (suggestion.isCurriculum) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                }
-                            ) {
-                                Text(
-                                    text = suggestion.badge,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
-                            }
-                        }
-                        if (idx < suggestions.lastIndex) {
-                            HorizontalDivider(
-                                thickness = 0.5.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    val goInteraction = remember { MutableInteractionSource() }
+                    Surface(
+                        onClick = {
+                            onSubmit()
+                            focusManager.clearFocus()
+                        },
+                        interactionSource = goInteraction,
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        contentColor = Color.White,
+                        modifier = Modifier
+                            .size(34.dp)
+                            .applePressScale(goInteraction, 0.92f)
+                            .testTag("search_word_button")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = "Look up word",
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
@@ -421,28 +357,523 @@ private fun SearchInputSection(
             }
         }
 
-        Button(
-            onClick = {
-                onSubmit()
-                focusManager.clearFocus()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .testTag("search_word_button"),
-            shape = MaterialTheme.shapes.medium
-        ) {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
+        if (suggestions.isNotEmpty()) {
+            AppleInsetGroupedCard(
+                modifier = Modifier.testTag("offline_suggestions_card"),
+                cornerRadius = 14.dp
+            ) {
+                suggestions.forEachIndexed { idx, suggestion ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                focusManager.clearFocus()
+                                onSelectSuggestion(suggestion)
+                            }
+                            .padding(horizontal = 14.dp, vertical = 11.dp)
+                            .testTag("offline_suggestion_${suggestion.word.lowercase()}"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(
+                                text = suggestion.word.replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.5.sp),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (suggestion.translationAr.isNotBlank()) {
+                                Text(
+                                    text = suggestion.translationAr,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Text(
+                            text = suggestion.badge,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (idx < suggestions.lastIndex) {
+                        AppleInsetDivider(startIndent = 14.dp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StudyHomeDashboard(
+    viewModel: DictionaryViewModel,
+    onOpenCourses: () -> Unit,
+    onOpenReview: () -> Unit,
+    onSelectWord: (String) -> Unit
+) {
+    val cardsDue by viewModel.cardsDueTodayCount.collectAsStateWithLifecycle()
+    val bookmarked by viewModel.bookmarksState.collectAsStateWithLifecycle()
+    val currentStreak by viewModel.currentStreak.collectAsStateWithLifecycle()
+    val dailyGoalTarget by viewModel.dailyGoalTarget.collectAsStateWithLifecycle()
+    val detailedStats by viewModel.detailedSrsStats.collectAsStateWithLifecycle()
+    val haptics = LocalHapticFeedback.current
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshStats()
+    }
+
+    val masteredCount = remember(bookmarked) {
+        bookmarked.count { it.distinctReviewDays >= 3 && it.interval >= 21 && !it.isLeech }
+    }
+    val todayReviews = remember(detailedStats) {
+        detailedStats.streakHistoryLast30Days.lastOrNull { it.isToday }?.count ?: 0
+    }
+    val safeGoal = dailyGoalTarget.coerceAtLeast(1)
+    val goalProgress = (todayReviews.toFloat() / safeGoal.toFloat()).coerceIn(0f, 1f)
+    val goalReached = todayReviews >= safeGoal
+    val goalPercent = (goalProgress * 100f).toInt()
+
+    val last7Days = remember(detailedStats.streakHistoryLast30Days) {
+        val raw = detailedStats.streakHistoryLast30Days.takeLast(7)
+        if (raw.size == 7) {
+            raw
+        } else {
+            val today = java.time.LocalDate.now()
+            (6L downTo 0L).map { offset ->
+                val date = today.minusDays(offset)
+                val epoch = date.toEpochDay()
+                raw.firstOrNull { it.epochDay == epoch } ?: DayStreakStatus(
+                    epochDay = epoch,
+                    dateLabel = date.dayOfWeek.name.take(3),
+                    hasReview = false,
+                    count = 0,
+                    isToday = offset == 0L
+                )
+            }
+        }
+    }
+
+    val goalSteps = listOf(10, 20, 30, 50)
+    val nextGoal = goalSteps.firstOrNull { it > dailyGoalTarget } ?: goalSteps.first()
+    val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
+    val appleGreen = Color(0xFF30D158)
+    val appleOrange = Color(0xFFFF9F0A)
+    val appleBlue = MaterialTheme.colorScheme.primary
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("study_home_dashboard"),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        // 1. Apple Health / Fitness Style Daily Tracking & 7-Day Activity Card
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            AppleSectionHeader(title = "Daily Overview")
+            AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Top Row: Title + Streak Pill + Tappable Goal Target Pill
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = appleOrange.copy(alpha = 0.14f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocalFireDepartment,
+                                        contentDescription = "Study streak",
+                                        tint = appleOrange,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "${currentStreak}d Streak",
+                                        style = MaterialTheme.typography.labelMedium.copy(
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 12.sp
+                                        ),
+                                        color = appleOrange
+                                    )
+                                }
+                            }
+                        }
+
+                        val goalInteraction = remember { MutableInteractionSource() }
+                        Surface(
+                            onClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.setDailyGoalTarget(nextGoal)
+                            },
+                            interactionSource = goalInteraction,
+                            shape = RoundedCornerShape(20.dp),
+                            color = appleBlue.copy(alpha = 0.12f),
+                            modifier = Modifier
+                                .applePressScale(goalInteraction, 0.95f)
+                                .testTag("overview_daily_goal_pill")
+                        ) {
+                            Text(
+                                text = "Goal: $dailyGoalTarget/day",
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp
+                                ),
+                                color = appleBlue,
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+
+                    // Daily Review Progress Metric + Bar
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Bottom
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.Bottom,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "$todayReviews",
+                                    style = MaterialTheme.typography.headlineMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 28.sp
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "/ $dailyGoalTarget reviews today",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
+                            Text(
+                                text = if (goalReached) "Goal Done" else "$goalPercent%",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                color = if (goalReached) appleGreen else appleBlue
+                            )
+                        }
+
+                        LinearProgressIndicator(
+                            progress = { goalProgress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = if (goalReached) appleGreen else appleBlue,
+                            trackColor = if (isDark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.08f)
+                        )
+                    }
+
+                    // Compact 3-Metric Row (Due / In Deck / Mastered)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        OverviewMiniMetric(label = "Due Now", value = "$cardsDue", accentColor = if (cardsDue > 0) appleOrange else appleGreen)
+                        OverviewMiniMetric(label = "In Deck", value = "${bookmarked.size}", accentColor = appleBlue)
+                        OverviewMiniMetric(label = "Mastered", value = "$masteredCount", accentColor = appleGreen)
+                    }
+                }
+
+                AppleInsetDivider(startIndent = 16.dp)
+
+                // 7-Day Daily Tracker Strip
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "LAST 7 DAYS",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.6.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        last7Days.forEach { day ->
+                            val localDate = java.time.LocalDate.ofEpochDay(day.epochDay)
+                            val dayInitial = localDate.dayOfWeek.name.take(1)
+                            val active = day.count > 0
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = dayInitial,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = if (day.isToday) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 11.sp
+                                    ),
+                                    color = if (day.isToday) appleBlue else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Surface(
+                                    shape = CircleShape,
+                                    color = when {
+                                        active -> appleGreen
+                                        day.isToday -> appleBlue.copy(alpha = 0.14f)
+                                        else -> if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+                                    },
+                                    border = if (day.isToday && !active) {
+                                        BorderStroke(1.5.dp, appleBlue)
+                                    } else null,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        if (active) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "${day.count} reviews",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        } else {
+                                            Text(
+                                                text = if (day.isToday) "•" else "",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = appleBlue
+                                            )
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = if (active) "${day.count}" else "—",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                    color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Today's Smart Anki + Curriculum Study Plan
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            AppleSectionHeader(title = "Today's Study Plan")
+            AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                // Step 1: FSRS Spaced Repetition Reviews
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = if (cardsDue > 0) onOpenReview else onOpenCourses)
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    AppleIconBadge(
+                        icon = if (cardsDue > 0) Icons.Default.Bolt else Icons.Default.CheckCircle,
+                        tintColor = if (cardsDue > 0) appleGreen else appleGreen,
+                        size = 38.dp,
+                        iconSize = 20.dp
+                    )
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = if (cardsDue > 0) "1. Review $cardsDue Due Cards" else "1. Daily Reviews Complete",
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.5.sp),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (cardsDue > 0) "FSRS spaced repetition scheduled today" else "No overdue cards waiting right now",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (cardsDue > 0) {
+                        val reviewInteraction = remember { MutableInteractionSource() }
+                        Button(
+                            onClick = onOpenReview,
+                            interactionSource = reviewInteraction,
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .height(34.dp)
+                                .applePressScale(reviewInteraction, 0.95f)
+                        ) {
+                            Text(
+                                text = "Review",
+                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                            )
+                        }
+                    }
+                }
+
+                AppleInsetDivider(startIndent = 64.dp)
+
+                // Step 2: Add Daily New Cards from 6 Books / IELTS
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenCourses)
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    AppleIconBadge(
+                        icon = Icons.Default.School,
+                        tintColor = appleBlue,
+                        size = 38.dp,
+                        iconSize = 20.dp
+                    )
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            text = "2. Add +10 New Words Today",
+                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.5.sp),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Pick a unit from 6 Essential Books or 3 IELTS Books",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    val coursesInteraction = remember { MutableInteractionSource() }
+                    FilledTonalButton(
+                        onClick = onOpenCourses,
+                        interactionSource = coursesInteraction,
+                        shape = RoundedCornerShape(20.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .height(34.dp)
+                            .applePressScale(coursesInteraction, 0.95f)
+                    ) {
+                        Text(
+                            text = "Courses",
+                            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3. Inset Grouped Offline Curriculum Quick-Access
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            AppleSectionHeader(title = "Offline Library")
+            AppleInsetGroupedCard {
+                StudyHomeQuickRow(
+                    icon = Icons.Default.WorkspacePremium,
+                    tintColor = appleOrange,
+                    title = "IELTS Preparation",
+                    subtitle = "3 Books • Barron's, Listening 1200 & Bank (5,991 words)",
+                    onClick = onOpenCourses
+                )
+                AppleInsetDivider(startIndent = 60.dp)
+                StudyHomeQuickRow(
+                    icon = Icons.AutoMirrored.Filled.MenuBook,
+                    tintColor = appleBlue,
+                    title = "6 Essential English Books",
+                    subtitle = "Levels A1 to C1 • 181 Units (3,600 words)",
+                    onClick = onOpenCourses
+                )
+                AppleInsetDivider(startIndent = 60.dp)
+                StudyHomeQuickRow(
+                    icon = Icons.Default.Category,
+                    tintColor = appleGreen,
+                    title = "26 Life Topics & 87K Arabic",
+                    subtitle = "Offline instant English ↔ Arabic search",
+                    onClick = onOpenCourses
+                )
+            }
+        }
+
+        // 4. Minimal Discovery Chips
+        DiscoverySuggestions(onSelectWord = onSelectWord)
+    }
+}
+
+@Composable
+private fun OverviewMiniMetric(
+    label: String,
+    value: String,
+    accentColor: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp
+            ),
+            color = accentColor
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun StudyHomeQuickRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tintColor: Color,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        AppleIconBadge(icon = icon, tintColor = tintColor, size = 34.dp, iconSize = 18.dp)
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = "Look up word",
-                style = MaterialTheme.typography.labelLarge
+                text = title,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 15.5.sp),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 
@@ -451,7 +882,9 @@ private fun SearchResultSection(
     viewModel: DictionaryViewModel,
     searchQuery: String,
     uiState: SearchUiState,
-    onOpenApiSettings: () -> Unit = {}
+    onOpenApiSettings: () -> Unit = {},
+    onOpenCourses: () -> Unit = {},
+    onOpenReview: () -> Unit = {}
 ) {
     val reducedMotion = LocalReducedMotionEnabled.current
 
@@ -465,36 +898,27 @@ private fun SearchResultSection(
     ) { state ->
         when (state) {
             is SearchUiState.Idle -> {
-                DiscoverySuggestions { selectedWord ->
-                    viewModel.performSearch(selectedWord)
-                }
+                StudyHomeDashboard(
+                    viewModel = viewModel,
+                    onOpenCourses = onOpenCourses,
+                    onOpenReview = onOpenReview,
+                    onSelectWord = { viewModel.performSearch(it) }
+                )
             }
             is SearchUiState.Loading -> {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                ) {
+                AppleInsetGroupedCard {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        CircularProgressIndicator()
+                        CircularProgressIndicator(strokeWidth = 2.5.dp)
                         Text(
                             text = "Looking up word...",
                             style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = "Checking offline 9-book & IELTS database first",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
@@ -518,6 +942,9 @@ private fun SearchResultSection(
     }
 }
 
+/**
+ * Preserved for GreetingScreenshotTest compatibility.
+ */
 @Composable
 fun HeroBannerSection() {
     Surface(
@@ -568,34 +995,39 @@ fun HeroBannerSection() {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DiscoverySuggestions(onSelectWord: (String) -> Unit) {
-    val list = listOf("serendipity", "ephemeral", "benevolent", "resilient", "pragmatic", "aesthetic")
+    val list = listOf("aquatic", "resilient", "serendipity", "ephemeral", "benevolent", "pragmatic")
+    val isDark = MaterialTheme.colorScheme.surface.red < 0.5f
+    val borderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = "Explore & try a word",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        androidx.compose.foundation.layout.FlowRow(
+        AppleSectionHeader(title = "Try a Word")
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             list.forEach { word ->
-                SuggestionChip(
+                val interaction = remember { MutableInteractionSource() }
+                Surface(
                     onClick = { onSelectWord(word) },
-                    label = {
-                        Text(
-                            text = word.replaceFirstChar { it.uppercase() },
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    },
+                    interactionSource = interaction,
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(0.5.dp, borderColor),
                     modifier = Modifier
-                        .heightIn(min = 48.dp)
+                        .applePressScale(interaction, 0.95f)
                         .testTag("seed_word_$word")
-                )
+                ) {
+                    Text(
+                        text = word.replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                    )
+                }
             }
         }
     }
@@ -619,11 +1051,11 @@ fun TryAnotherPhotoButton(
             onClick = { viewModel.cycleNextPhoto(word) },
             enabled = !isCycling,
             shape = CircleShape,
-            color = Color.Black.copy(alpha = 0.52f),
+            color = Color.Black.copy(alpha = 0.50f),
             contentColor = Color.White,
-            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.28f)),
+            border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.25f)),
             modifier = modifier
-                .size(34.dp)
+                .size(32.dp)
                 .testTag("try_another_photo_button_${word.word}")
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -631,7 +1063,7 @@ fun TryAnotherPhotoButton(
                     CircularProgressIndicator(
                         color = Color.White,
                         modifier = Modifier
-                            .size(14.dp)
+                            .size(13.dp)
                             .testTag("try_another_photo_spinner"),
                         strokeWidth = 1.8.dp
                     )
@@ -639,7 +1071,7 @@ fun TryAnotherPhotoButton(
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "Try another photo",
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                 }
             }
@@ -650,10 +1082,10 @@ fun TryAnotherPhotoButton(
     Surface(
         onClick = { viewModel.cycleNextPhoto(word) },
         enabled = !isCycling,
-        shape = MaterialTheme.shapes.small,
-        color = Color.Black.copy(alpha = 0.55f),
+        shape = RoundedCornerShape(20.dp),
+        color = Color.Black.copy(alpha = 0.52f),
         contentColor = Color.White,
-        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.25f)),
+        border = BorderStroke(0.5.dp, Color.White.copy(alpha = 0.22f)),
         modifier = modifier.testTag("try_another_photo_button_${word.word}")
     ) {
         Row(
@@ -669,20 +1101,14 @@ fun TryAnotherPhotoButton(
                         .testTag("try_another_photo_spinner"),
                     strokeWidth = 2.dp
                 )
-                Text(
-                    text = "Fetching...",
-                    style = MaterialTheme.typography.labelSmall
-                )
+                Text(text = "Fetching...", style = MaterialTheme.typography.labelSmall)
             } else {
                 Icon(
                     imageVector = Icons.Default.Refresh,
                     contentDescription = null,
                     modifier = Modifier.size(14.dp)
                 )
-                Text(
-                    text = "Change photo",
-                    style = MaterialTheme.typography.labelSmall
-                )
+                Text(text = "Change photo", style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -697,9 +1123,9 @@ fun WordDetailsCard(
     viewModel: DictionaryViewModel
 ) {
     var showCardInfoDialog by remember { mutableStateOf(false) }
-    val masteryPercentage = if (wordEntity.isBookmarked) 85 else 35
     val selectedAccent by viewModel.selectedAccent.collectAsStateWithLifecycle()
     val displayPhonetic = getPhoneticForAccent(wordEntity.phonetic, selectedAccent)
+    val haptics = LocalHapticFeedback.current
 
     if (showCardInfoDialog) {
         WordCardInfoDialog(
@@ -713,187 +1139,175 @@ fun WordDetailsCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("word_details_card"),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // 1. Expressive Headword Header Card
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.primaryContainer,
-            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+        // 1. Apple Dictionary Editorial Headword Header (Directly on clean canvas — NO heavy colored box!)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = wordEntity.word.replaceFirstChar { it.uppercase() },
-                            style = RedeusExpressiveType.headword,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        androidx.compose.foundation.layout.FlowRow(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (wordEntity.partOfSpeech.isNotBlank()) {
-                                Surface(
-                                    shape = MaterialTheme.shapes.extraSmall,
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                ) {
-                                    Text(
-                                        text = wordEntity.partOfSpeech,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                    )
-                                }
-                            }
-                            CardStatusBadge(wordEntity = wordEntity)
-                            if (wordEntity.isLeech) {
-                                LeechBadge(lapses = wordEntity.lapses)
-                            }
-                        }
-                    }
-
+                    Text(
+                        text = wordEntity.word.replaceFirstChar { it.uppercase() },
+                        style = RedeusExpressiveType.headword.copy(fontSize = 36.sp),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        IconButton(
-                            onClick = { showCardInfoDialog = true },
-                            modifier = Modifier
-                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                .testTag("word_card_info_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Info,
-                                contentDescription = "Card review history"
+                        if (displayPhonetic.isNotBlank()) {
+                            Text(
+                                text = displayPhonetic,
+                                style = RedeusExpressiveType.phonetic,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        FilledTonalIconButton(
-                            onClick = onBookmarkToggle,
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = if (wordEntity.isBookmarked) {
-                                    MaterialTheme.colorScheme.tertiaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.surfaceContainerLowest
-                                },
-                                contentColor = if (wordEntity.isBookmarked) {
-                                    MaterialTheme.colorScheme.onTertiaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                }
-                            ),
-                            modifier = Modifier
-                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-                                .testTag("bookmark_toggle")
-                        ) {
-                            Icon(
-                                imageVector = if (wordEntity.isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
-                                contentDescription = if (wordEntity.isBookmarked) "Remove bookmark" else "Bookmark word"
+                        if (wordEntity.partOfSpeech.isNotBlank()) {
+                            Text(
+                                text = "• ${wordEntity.partOfSpeech}",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 }
 
-                // Pronunciation Row
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier
-                        .clip(MaterialTheme.shapes.small)
-                        .clickable { onSpeak() }
-                        .padding(vertical = 2.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FilledTonalIconButton(
+                    val speakInteraction = remember { MutableInteractionSource() }
+                    Surface(
                         onClick = onSpeak,
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ),
+                        interactionSource = speakInteraction,
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+                        contentColor = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
-                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .size(40.dp)
+                            .applePressScale(speakInteraction, 0.92f)
                             .testTag("speak_button")
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = "Pronounce word"
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = "Pronounce word",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
-                    Column {
-                        Text(
-                            text = displayPhonetic.ifBlank { "/${wordEntity.word}/" },
-                            style = RedeusExpressiveType.phonetic,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = "Pronunciation",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f)
+
+                    val bookmarkInteraction = remember { MutableInteractionSource() }
+                    Surface(
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            onBookmarkToggle()
+                        },
+                        interactionSource = bookmarkInteraction,
+                        shape = CircleShape,
+                        color = if (wordEntity.isBookmarked) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerLow
+                        },
+                        contentColor = if (wordEntity.isBookmarked) {
+                            Color.White
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .applePressScale(bookmarkInteraction, 0.92f)
+                            .testTag("bookmark_toggle")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (wordEntity.isBookmarked) Icons.Filled.Bookmark else Icons.Outlined.BookmarkBorder,
+                                contentDescription = if (wordEntity.isBookmarked) "Remove bookmark" else "Bookmark word",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(
+                        onClick = { showCardInfoDialog = true },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("word_card_info_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Card review history",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
                 }
-
-                WordTagsRow(word = wordEntity, viewModel = viewModel)
             }
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                CardStatusBadge(wordEntity = wordEntity)
+                if (wordEntity.isLeech) {
+                    LeechBadge(lapses = wordEntity.lapses)
+                }
+            }
+
+            WordTagsRow(word = wordEntity, viewModel = viewModel)
         }
 
-        // 2. Definition Section + Offline Arabic Meaning + Optional AI Enrichment
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-        ) {
+        // 2. Unified Inset Grouped Meaning Card (Arabic + English Definition + Optional AI Enrich)
+        AppleInsetGroupedCard(cornerRadius = 18.dp) {
+            val arabicEnabled by viewModel.arabicTranslationEnabled.collectAsStateWithLifecycle()
+            val translations by viewModel.wordArabicTranslations.collectAsStateWithLifecycle()
+            val translatingWord by viewModel.translatingArabicWord.collectAsStateWithLifecycle()
+            val enrichingWord by viewModel.enrichingWord.collectAsStateWithLifecycle()
+            val wordKey = wordEntity.word.trim().lowercase()
+            val arabicText = wordEntity.arabicMeaning.ifBlank { translations[wordKey] ?: "" }
+            val isTranslating = translatingWord == wordKey
+            val isEnriching = enrichingWord == wordKey
+
+            LaunchedEffect(wordKey, arabicEnabled) {
+                if (arabicEnabled && arabicText.isBlank()) {
+                    viewModel.ensureOfflineArabicLoaded(wordEntity)
+                }
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Book,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
+                if (arabicEnabled && arabicText.isNotBlank()) {
                     Text(
-                        text = "Definition",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
+                        text = arabicText,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 21.sp,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("arabic_translation_text")
                     )
-                }
-
-                val arabicEnabled by viewModel.arabicTranslationEnabled.collectAsStateWithLifecycle()
-                val translations by viewModel.wordArabicTranslations.collectAsStateWithLifecycle()
-                val translatingWord by viewModel.translatingArabicWord.collectAsStateWithLifecycle()
-                val enrichingWord by viewModel.enrichingWord.collectAsStateWithLifecycle()
-                val wordKey = wordEntity.word.trim().lowercase()
-                val arabicText = wordEntity.arabicMeaning.ifBlank { translations[wordKey] ?: "" }
-                val isTranslating = translatingWord == wordKey
-                val isEnriching = enrichingWord == wordKey
-
-                LaunchedEffect(wordKey, arabicEnabled) {
-                    if (arabicEnabled && arabicText.isBlank()) {
-                        viewModel.ensureOfflineArabicLoaded(wordEntity)
+                    if (wordEntity.definition.isNotBlank() && wordEntity.definition != arabicText) {
+                        AppleInsetDivider(startIndent = 0.dp)
                     }
                 }
 
@@ -905,110 +1319,74 @@ fun WordDetailsCard(
                     )
                 }
 
-                if (arabicEnabled) {
-                    if (arabicText.isNotBlank()) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.72f),
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Translate,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Text(
-                                    text = arabicText,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .testTag("arabic_translation_text")
-                                )
-                            }
-                        }
-                    } else {
-                        FilledTonalButton(
-                            onClick = { viewModel.translateWordToArabic(wordEntity) },
-                            enabled = !isTranslating,
-                            modifier = Modifier
-                                .heightIn(min = 44.dp)
-                                .testTag("show_arabic_meaning_button")
-                        ) {
-                            if (isTranslating) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Translating...")
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.Translate,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Show Arabic meaning")
-                            }
+                if (arabicEnabled && arabicText.isBlank()) {
+                    TextButton(
+                        onClick = { viewModel.translateWordToArabic(wordEntity) },
+                        enabled = !isTranslating,
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.testTag("show_arabic_meaning_button")
+                    ) {
+                        if (isTranslating) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Translating...")
+                        } else {
+                            Icon(Icons.Default.Translate, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Translate to Arabic")
                         }
                     }
                 }
+            }
 
-                // Optional AI enrichment button for offline dictionary / book words
-                val needsEnrichment = wordEntity.synonyms.isBlank() &&
-                    wordEntity.mnemonic.isBlank() &&
-                    wordEntity.imagePrompt.isBlank()
-                if (needsEnrichment) {
-                    HorizontalDivider(
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
-                    )
-                    FilledTonalButton(
-                        onClick = { viewModel.enrichWordWithAi(wordEntity) },
-                        enabled = !isEnriching,
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 46.dp)
-                            .testTag("enrich_with_ai_button")
-                    ) {
-                        if (isEnriching) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Enriching with AI...")
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Enrich with AI (Synonyms, Mnemonic & Photo)")
-                        }
+            val needsEnrichment = wordEntity.synonyms.isBlank() &&
+                wordEntity.mnemonic.isBlank() &&
+                wordEntity.imagePrompt.isBlank()
+            if (needsEnrichment) {
+                AppleInsetDivider(startIndent = 18.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = !isEnriching) { viewModel.enrichWordWithAi(wordEntity) }
+                        .padding(horizontal = 18.dp, vertical = 13.dp)
+                        .testTag("enrich_with_ai_button"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (isEnriching) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = "Enriching with AI...",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text(
+                            text = "Enrich with AI (Synonyms, Mnemonic & Photo)",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             }
         }
 
-        // 3. Usage Example + Sentence Mining Actions
+        // 3. Editorial Quoted Usage Example Card
         if (wordEntity.example.isNotBlank()) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainer
-            ) {
+            AppleInsetGroupedCard(cornerRadius = 18.dp) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1016,15 +1394,34 @@ fun WordDetailsCard(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Usage example",
-                        style = MaterialTheme.typography.titleSmall,
+                        text = "EXAMPLE",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 0.6.sp
+                        ),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Text(
-                        text = "\u201c${wordEntity.example}\u201d",
-                        style = MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic),
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .heightIn(min = 24.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                        Text(
+                            text = "\u201c${wordEntity.example}\u201d",
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontStyle = FontStyle.Italic,
+                                fontSize = 16.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                     ExampleSentenceMiningActionsRow(
                         wordEntity = wordEntity,
                         viewModel = viewModel
@@ -1033,140 +1430,82 @@ fun WordDetailsCard(
             }
         }
 
-        // 4. Visual Illustration / Photo Card
+        // 4. Visual Illustration / Photo Card (collapses cleanly when offline)
         if (wordEntity.imagePrompt.isNotEmpty()) {
             val context = LocalContext.current
             val imageLoader = rememberAppImageLoader(context)
-            val isWebPhoto = wordEntity.imagePrompt.startsWith("http")
-            val captionText = if (isWebPhoto) {
-                val derived = viewModel.getDerivedQuery(wordEntity.word)
-                if (!derived.isNullOrBlank()) "Photo matching \"$derived\"" else "Photo from Pexels for ${wordEntity.word}"
-            } else {
-                "\"${wordEntity.imagePrompt}\""
+            var photoFailed by remember(wordEntity.word, wordEntity.imagePrompt) {
+                mutableStateOf(false)
             }
+            if (!photoFailed) {
+                val isWebPhoto = wordEntity.imagePrompt.startsWith("http")
+                val captionText = if (isWebPhoto) {
+                    val derived = viewModel.getDerivedQuery(wordEntity.word)
+                    if (!derived.isNullOrBlank()) "Photo matching \"$derived\"" else "Photo from Pexels"
+                } else {
+                    "\"${wordEntity.imagePrompt}\""
+                }
 
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp),
-                shape = MaterialTheme.shapes.large,
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(getAIImageUrl(wordEntity.word, wordEntity.imagePrompt))
-                            .crossfade(true)
-                            .build(),
-                        imageLoader = imageLoader,
-                        contentDescription = "Visual illustration of ${wordEntity.word}",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                        loading = {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                                    Text(
-                                        text = "Loading illustration...",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        },
-                        error = {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier.padding(16.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ImageNotSupported,
-                                        contentDescription = "Image unavailable",
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(32.dp)
-                                    )
-                                    Text(
-                                        text = "Image unavailable",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        },
-                        success = {
-                            SubcomposeAsyncImageContent(
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        }
-                    )
-
-                    // Scrim gradient for readable overlay caption
+                AppleInsetGroupedCard(cornerRadius = 18.dp) {
                     Box(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        MaterialTheme.colorScheme.scrim.copy(alpha = 0.78f)
-                                    ),
-                                    startY = 120f
-                                )
-                            )
-                    )
-
-                    TryAnotherPhotoButton(
-                        word = wordEntity,
-                        viewModel = viewModel,
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(8.dp)
-                    )
-
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                            .fillMaxWidth()
+                            .height(210.dp)
                     ) {
-                        Surface(
-                            shape = MaterialTheme.shapes.extraSmall,
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        ) {
-                            Text(
-                                text = if (isWebPhoto) "Pexels photo" else "AI visualization",
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                            )
-                        }
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.9f),
-                            contentColor = MaterialTheme.colorScheme.onSurface
-                        ) {
-                            Text(
-                                text = captionText,
-                                style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
+                        SubcomposeAsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(getAIImageUrl(wordEntity.word, wordEntity.imagePrompt))
+                                .crossfade(true)
+                                .build(),
+                            imageLoader = imageLoader,
+                            contentDescription = "Visual illustration of ${wordEntity.word}",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                            onError = { photoFailed = true },
+                            loading = {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                }
+                            },
+                            error = {},
+                            success = {
+                                SubcomposeAsyncImageContent(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f)),
+                                        startY = 140f
+                                    )
+                                )
+                        )
+
+                        TryAnotherPhotoButton(
+                            word = wordEntity,
+                            viewModel = viewModel,
+                            compact = true,
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(10.dp)
+                        )
+
+                        Text(
+                            text = captionText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White.copy(alpha = 0.90f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(14.dp)
+                        )
                     }
                 }
             }
@@ -1174,59 +1513,72 @@ fun WordDetailsCard(
 
         // 5. Synonyms & Antonyms
         if (wordEntity.synonyms.isNotBlank() || wordEntity.antonyms.isNotBlank()) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerLow
-            ) {
+            AppleInsetGroupedCard(cornerRadius = 18.dp) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     if (wordEntity.synonyms.isNotBlank()) {
                         Text(
-                            text = "Synonyms",
-                            style = MaterialTheme.typography.titleSmall,
+                            text = "SYNONYMS",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.6.sp
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        androidx.compose.foundation.layout.FlowRow(
+                        FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             wordEntity.synonyms.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { syn ->
-                                AssistChip(
+                                Surface(
                                     onClick = { viewModel.performSearch(syn) },
-                                    label = { Text(syn, style = MaterialTheme.typography.labelMedium) }
-                                )
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                ) {
+                                    Text(
+                                        text = syn,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
                         }
                     }
 
                     if (wordEntity.antonyms.isNotBlank()) {
                         if (wordEntity.synonyms.isNotBlank()) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                            AppleInsetDivider(startIndent = 0.dp)
                         }
                         Text(
-                            text = "Antonyms",
-                            style = MaterialTheme.typography.titleSmall,
+                            text = "ANTONYMS",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.6.sp
+                            ),
                             color = MaterialTheme.colorScheme.error
                         )
-                        androidx.compose.foundation.layout.FlowRow(
+                        FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             wordEntity.antonyms.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { ant ->
-                                AssistChip(
+                                Surface(
                                     onClick = { viewModel.performSearch(ant) },
-                                    label = { Text(ant, style = MaterialTheme.typography.labelMedium) },
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                                        labelColor = MaterialTheme.colorScheme.onErrorContainer
-                                    ),
-                                    border = null
-                                )
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                    contentColor = MaterialTheme.colorScheme.error
+                                ) {
+                                    Text(
+                                        text = ant,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -1234,88 +1586,37 @@ fun WordDetailsCard(
             }
         }
 
-        // 6. Memory Aid (Mnemonic)
+        // 6. Restrained Memory Aid Card
         if (wordEntity.mnemonic.isNotBlank()) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
-            ) {
-                Column(
+            AppleInsetGroupedCard(cornerRadius = 18.dp) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lightbulb,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                    AppleIconBadge(
+                        icon = Icons.Default.Lightbulb,
+                        tintColor = Color(0xFFFF9F0A),
+                        size = 32.dp,
+                        iconSize = 18.dp
+                    )
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "MEMORY AID",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                letterSpacing = 0.6.sp
+                            ),
+                            color = Color(0xFFFF9F0A)
                         )
                         Text(
-                            text = "Memory aid",
-                            style = MaterialTheme.typography.titleSmall
+                            text = wordEntity.mnemonic,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    Text(
-                        text = wordEntity.mnemonic,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            }
-        }
-
-        // 7. Mastery Summary Row
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Surface(
-                    shape = MaterialTheme.shapes.medium,
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "$masteryPercentage%",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "Mastery status",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = if (wordEntity.isBookmarked) "Saved in your vocabulary deck" else "Searched word (not bookmarked yet)",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    LinearProgressIndicator(
-                        progress = { masteryPercentage / 100f },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(MaterialTheme.shapes.extraSmall)
-                    )
                 }
             }
         }
@@ -1337,13 +1638,9 @@ fun ErrorStateCard(
             lower.contains("timeout")
     }
 
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("error_state_card"),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer
+    AppleInsetGroupedCard(
+        modifier = Modifier.testTag("error_state_card"),
+        cornerRadius = 18.dp
     ) {
         Column(
             modifier = Modifier
@@ -1352,19 +1649,22 @@ fun ErrorStateCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(
-                imageVector = if (isOffline) Icons.Default.WifiOff else Icons.Default.ErrorOutline,
-                contentDescription = null,
-                modifier = Modifier.size(36.dp)
+            AppleIconBadge(
+                icon = if (isOffline) Icons.Default.WifiOff else Icons.Default.ErrorOutline,
+                tintColor = MaterialTheme.colorScheme.error,
+                size = 44.dp,
+                iconSize = 24.dp
             )
             Text(
-                text = if (isOffline) "You appear to be offline" else "Couldn't complete request",
+                text = if (isOffline) "You Appear to Be Offline" else "Word Not Found",
                 style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center
             )
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -1374,34 +1674,20 @@ fun ErrorStateCard(
             ) {
                 Button(
                     onClick = onRetry,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError
-                    ),
-                    modifier = Modifier.heightIn(min = 48.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(44.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Try again")
+                    Text("Try Again")
                 }
                 if (onOpenApiSettings != null && !isOffline) {
                     OutlinedButton(
                         onClick = onOpenApiSettings,
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
-                            .heightIn(min = 48.dp)
+                            .height(44.dp)
                             .testTag("error_open_api_settings_button")
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Key,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("API settings")
+                        Text("API Settings")
                     }
                 }
             }

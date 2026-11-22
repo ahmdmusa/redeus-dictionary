@@ -316,7 +316,17 @@ class DictionaryViewModel(
     private val _pronunciationSource = MutableStateFlow("auto")
     val pronunciationSource: StateFlow<String> = _pronunciationSource.asStateFlow()
 
-    val selectedAccent: StateFlow<String> = MutableStateFlow("US").asStateFlow()
+    private val _selectedAccent = MutableStateFlow("UK")
+    val selectedAccent: StateFlow<String> = _selectedAccent.asStateFlow()
+
+    private val _selectedTtsVoiceName = MutableStateFlow("") // empty = Auto (Best Offline Neural)
+    val selectedTtsVoiceName: StateFlow<String> = _selectedTtsVoiceName.asStateFlow()
+
+    private val _availableOfflineVoices = MutableStateFlow<List<OfflineTtsVoiceOption>>(emptyList())
+    val availableOfflineVoices: StateFlow<List<OfflineTtsVoiceOption>> = _availableOfflineVoices.asStateFlow()
+
+    private val _activeOfflineVoiceLabel = MutableStateFlow("Auto (Best Offline UK Neural)")
+    val activeOfflineVoiceLabel: StateFlow<String> = _activeOfflineVoiceLabel.asStateFlow()
 
     private val _speechSpeed = MutableStateFlow("Normal")
     val speechSpeed: StateFlow<String> = _speechSpeed.asStateFlow()
@@ -626,6 +636,30 @@ class DictionaryViewModel(
         _pronunciationSource.value = source
         val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
         sharedPrefs.edit().putString("pronunciation_source", source).apply()
+    }
+
+    fun setSelectedAccent(accent: String) {
+        val normalized = if (accent.equals("US", ignoreCase = true)) "US" else "UK"
+        _selectedAccent.value = normalized
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putString("selected_accent", normalized).apply()
+        updateTtsSettings()
+    }
+
+    fun setSelectedTtsVoiceName(voiceName: String) {
+        val clean = voiceName.trim()
+        _selectedTtsVoiceName.value = clean
+        val sharedPrefs = getApplication<Application>().getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+        sharedPrefs.edit().putString("selected_tts_voice_name", clean).apply()
+        updateTtsSettings()
+    }
+
+    fun refreshAvailableTtsVoices() {
+        updateTtsSettings()
+    }
+
+    fun previewTtsVoice(sampleText: String = "Welcome to Redeus Dictionary. Daily spaced repetition builds lasting fluency.") {
+        speakWithTts(sampleText)
     }
 
     fun setSpeechSpeed(speed: String) {
@@ -2439,12 +2473,55 @@ class DictionaryViewModel(
     }
 
     fun updateTtsSettings() {
-        if (isTtsReady) {
-            tts?.setLanguage(Locale.US)
-            
-            val rate = if (_speechSpeed.value == "Slow") 0.7f else 1.0f
-            tts?.setSpeechRate(rate)
+        val engine = tts ?: return
+        if (!isTtsReady) return
+
+        val accent = _selectedAccent.value
+        val targetLocale = if (accent.equals("UK", ignoreCase = true)) Locale.UK else Locale.US
+        try {
+            val langResult = engine.setLanguage(targetLocale)
+            if (langResult == TextToSpeech.LANG_MISSING_DATA || langResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                engine.setLanguage(Locale.US)
+            }
+        } catch (_: Exception) {
+            // Safe fallback in test / restricted environments
         }
+
+        try {
+            val allVoices = engine.voices
+            val rankedOptions = TtsVoiceSelector.rankOfflineEnglishVoices(allVoices, accent)
+            _availableOfflineVoices.value = rankedOptions
+
+            val preferredName = _selectedTtsVoiceName.value
+            val matchedVoice = if (preferredName.isNotBlank()) {
+                allVoices?.firstOrNull { it.name == preferredName }
+            } else {
+                val topOption = rankedOptions.firstOrNull()
+                if (topOption != null) allVoices?.firstOrNull { it.name == topOption.name } else null
+            }
+
+            if (matchedVoice != null) {
+                engine.voice = matchedVoice
+                val matchedOption = rankedOptions.firstOrNull { it.name == matchedVoice.name }
+                _activeOfflineVoiceLabel.value = matchedOption?.displayName
+                    ?: TtsVoiceSelector.formatFriendlyVoiceName(
+                        matchedVoice.name,
+                        matchedVoice.locale?.country ?: accent,
+                        !matchedVoice.isNetworkConnectionRequired
+                    )
+            } else {
+                _activeOfflineVoiceLabel.value = if (accent.equals("UK", ignoreCase = true)) {
+                    "System UK English (Install Google UK Offline Pack)"
+                } else {
+                    "System US English (Install Google US Offline Pack)"
+                }
+            }
+        } catch (_: Exception) {
+            _activeOfflineVoiceLabel.value = "System $accent English"
+        }
+
+        val rate = if (_speechSpeed.value == "Slow") 0.72f else 0.96f
+        engine.setSpeechRate(rate)
     }
 
     override fun onInit(status: Int) {
@@ -3933,10 +4010,12 @@ class DictionaryViewModel(
         _reminderHour.value = com.example.reminder.ReminderHelper.getReminderHour(application)
         _reminderMinute.value = com.example.reminder.ReminderHelper.getReminderMinute(application)
         
-        _selectedThemeColor.value = sharedPrefs.getString("selected_theme_color", "purple") ?: "purple"
+        _selectedThemeColor.value = sharedPrefs.getString("selected_theme_color", "indigo") ?: "indigo"
         _themeMode.value = sharedPrefs.getString("theme_mode", "system") ?: "system"
-        _dynamicColorEnabled.value = sharedPrefs.getBoolean("dynamic_color_enabled", true)
+        _dynamicColorEnabled.value = sharedPrefs.getBoolean("dynamic_color_enabled", false)
         _arabicTranslationEnabled.value = sharedPrefs.getBoolean("arabic_translation_enabled", true)
+        _selectedAccent.value = sharedPrefs.getString("selected_accent", "UK") ?: "UK"
+        _selectedTtsVoiceName.value = sharedPrefs.getString("selected_tts_voice_name", "") ?: ""
         _useSeparateTtsKeys.value = if (sharedPrefs.contains("use_separate_tts_keys")) {
             sharedPrefs.getBoolean("use_separate_tts_keys", false)
         } else {

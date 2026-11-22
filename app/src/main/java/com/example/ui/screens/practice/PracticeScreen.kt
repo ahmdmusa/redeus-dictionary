@@ -54,28 +54,27 @@ fun FlashcardsTabContent(
             .background(MaterialTheme.colorScheme.surface),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // M3 Segmented Button Row for peer study modes
-        SingleChoiceSegmentedButtonRow(
+        // Apple HIG Segmented Control for Cards / Quiz / Spelling
+        val modes = listOf(
+            FlashcardStudyMode.CARDS,
+            FlashcardStudyMode.QUIZ,
+            FlashcardStudyMode.SPELLING
+        )
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 640.dp)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            val modes = listOf(
-                Triple(FlashcardStudyMode.CARDS, "Cards", "study_mode_cards"),
-                Triple(FlashcardStudyMode.QUIZ, "Quiz", "study_mode_quiz"),
-                Triple(FlashcardStudyMode.SPELLING, "Spelling", "study_mode_spelling")
+            com.example.ui.components.AppleSegmentedControl(
+                items = listOf(
+                    "Cards" to "study_mode_cards",
+                    "Quiz" to "study_mode_quiz",
+                    "Spelling" to "study_mode_spelling"
+                ),
+                selectedIndex = modes.indexOf(studyMode).coerceAtLeast(0),
+                onSelect = { idx -> viewModel.setStudyMode(modes[idx]) }
             )
-            modes.forEachIndexed { index, (mode, label, tag) ->
-                SegmentedButton(
-                    selected = studyMode == mode,
-                    onClick = { viewModel.setStudyMode(mode) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
-                    modifier = Modifier.testTag(tag)
-                ) {
-                    Text(label)
-                }
-            }
         }
 
         when (studyMode) {
@@ -372,51 +371,49 @@ fun FlashcardItem(
                     if (word.imagePrompt.isNotEmpty()) {
                         val context = LocalContext.current
                         val imageLoader = rememberAppImageLoader(context)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(164.dp)
-                                .clip(MaterialTheme.shapes.medium)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                        ) {
-                            SubcomposeAsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(getAIImageUrl(word.word, word.imagePrompt))
-                                    .crossfade(true)
-                                    .build(),
-                                imageLoader = imageLoader,
-                                contentDescription = "Illustration for ${word.word}",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                                loading = {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                                    }
-                                },
-                                error = {
-                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.ImageNotSupported,
-                                            contentDescription = "Image unavailable",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        var photoFailed by remember(word.word, word.imagePrompt) {
+                            mutableStateOf(false)
+                        }
+                        if (!photoFailed) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(164.dp)
+                                    .clip(MaterialTheme.shapes.medium)
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            ) {
+                                SubcomposeAsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(getAIImageUrl(word.word, word.imagePrompt))
+                                        .crossfade(true)
+                                        .build(),
+                                    imageLoader = imageLoader,
+                                    contentDescription = "Illustration for ${word.word}",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                    onError = { photoFailed = true },
+                                    loading = {
+                                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                                        }
+                                    },
+                                    error = {},
+                                    success = {
+                                        SubcomposeAsyncImageContent(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
                                         )
                                     }
-                                },
-                                success = {
-                                    SubcomposeAsyncImageContent(
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                }
-                            )
-                            TryAnotherPhotoButton(
-                                word = word,
-                                viewModel = viewModel,
-                                compact = true,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                            )
+                                )
+                                TryAnotherPhotoButton(
+                                    word = word,
+                                    viewModel = viewModel,
+                                    compact = true,
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(8.dp)
+                                )
+                            }
                         }
                     }
 
